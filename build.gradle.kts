@@ -11,7 +11,7 @@ val kotlinVersion = "1.6.10"
 val kotlinLanguageVersion = kotlinVersion.substringBeforeLast('.')
 
 group = "dev.architectury"
-version = "1.6.3"
+version = "1.7.0-candle"
 
 repositories {
     mavenCentral()
