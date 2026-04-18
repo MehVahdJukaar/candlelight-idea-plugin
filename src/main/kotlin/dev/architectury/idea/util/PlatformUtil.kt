@@ -46,7 +46,7 @@ val PsiMethod.commonMethods: Set<PsiMethod>
         val name = clazz.binaryName ?: return emptySet()
         val pkg = name.substringBeforeLast('.')
 
-        val nameMatches = name.endsWith("Impl") && Platform.values().any { pkg.endsWith(".${it.id}") }
+        val nameMatches = name.endsWith("Impl") && Platform.values().any { pkg.endsWith(".${it.platSubPackageName()}") }
         if (!nameMatches) return emptySet()
 
         val commonPkg = pkg.substringBeforeLast('.')

@@ -99,12 +99,14 @@ class ImplementExpectPlatformFixDialog(
     }
 
     private fun getTargetDirectory(destination: MoveDestination) =
-        destination.getTargetDirectory(
-            PackageUtil.findPossiblePackageDirectoryInModule(
-                ModuleUtil.findModuleForPsiElement(method),
-                packageName
+        ModuleUtil.findModuleForPsiElement(method)?.let { module ->
+            destination.getTargetDirectory(
+                PackageUtil.findPossiblePackageDirectoryInModule(
+                    module,
+                    packageName
+                )
             )
-        )
+        } ?: error("No module found for method: ${method.text}")
 
     companion object {
         fun resolveFile(project: Project, selection: PsiDirectory, packageName: String): PsiDirectory {

@@ -2,7 +2,7 @@ package dev.architectury.idea.util
 
 enum class AnnotationType(private val annotations: Set<String>) : Set<String> by annotations {
     EXPECT_PLATFORM(
-        "net.mehvahdjukaar.candlelight.api.PlatformImpl"
+        "net.mehvahdjukaar.candlelight.api.PlatformImpl",
         "dev.architectury.injectables.annotations.ExpectPlatform",
         "me.shedaniel.architectury.annotations.ExpectPlatform",
         "me.shedaniel.architectury.ExpectPlatform"

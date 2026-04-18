@@ -30,15 +30,32 @@ class ImplementExpectPlatformFix(private val platforms: List<Platform>) : LocalQ
         if (platform != null) return ArchitecturyBundle["inspection.implementExpectPlatform.single", platform]
         return ArchitecturyBundle["inspection.implementExpectPlatform"]
     }
-
     override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
-        val method = findMethod(descriptor.psiElement) ?: error("Could not find method from ${descriptor.psiElement}")
+        val method = findMethod(descriptor.psiElement)
+            ?: error("Could not find method from ${descriptor.psiElement}")
+
         val facade = JavaPsiFacade.getInstance(project)
+        val modules = ModuleManager.getInstance(project).modules.toList()
+
         val missingPackages = HashMap<Platform, String>()
 
+        fun moduleFor(platform: Platform): Module? {
+            return modules.firstOrNull {
+                it.name.substringBeforeLast(".")
+                    .endsWith(".${platform.name}", ignoreCase = true)
+            }
+        }
+
         for (platform in platforms) {
+            val module = moduleFor(platform)
+                ?: continue
+
+            // ✅ correct IntelliJ scope
+            val scope = GlobalSearchScope.moduleScope(module)
+
             val implClassName = platform.getImplementationName(method.containingClass!!)
-            val implClass = facade.findClass(implClassName, GlobalSearchScope.projectScope(project)) ?: run {
+
+            val implClass = facade.findClass(implClassName, scope) ?: run {
                 val packageName = implClassName.substringBeforeLast('.')
                 val pkg = facade.findPackage(packageName)
 
@@ -48,9 +65,11 @@ class ImplementExpectPlatformFix(private val platforms: List<Platform>) : LocalQ
                 }
 
                 val dir = findJavaSourceDirectory(pkg.directories)
+
                 JavaDirectoryService.getInstance().getClasses(dir)
                     .firstOrNull { it.name == implClassName.substringAfterLast('.') }
-                    ?: JavaDirectoryService.getInstance().createClass(dir, implClassName.substringAfterLast('.'))
+                    ?: JavaDirectoryService.getInstance()
+                        .createClass(dir, implClassName.substringAfterLast('.'))
             } ?: continue
 
             addMethod(project, method, implClass)
@@ -58,21 +77,31 @@ class ImplementExpectPlatformFix(private val platforms: List<Platform>) : LocalQ
 
         missingPackages.forEach { (platform, packageName) ->
             var directory: PsiDirectory? = null
-            val modules = ModuleManager.getInstance(project).modules.asSequence()
-                .distinctBy { it.name }
-                .toList()
+
+            fun moduleMatches(module: Module): Boolean {
+                return module.name.substringBeforeLast(".")
+                    .endsWith(".${platform.name}", ignoreCase = true)
+            }
 
             fun handleModule(module: Module, test: Boolean): Boolean {
-                if (module.name.substringBeforeLast(".").endsWith(".${platform.name}", ignoreCase = true)) {
-                    val dir = ModuleRootManager.getInstance(module).contentEntries.asSequence()
-                        .flatMap { it.getSourceFolders(if (test) JavaSourceRootType.TEST_SOURCE else JavaSourceRootType.SOURCE) }
-                        .filter { !JavaProjectRootsUtil.isForGeneratedSources(it) }
-                        .mapNotNull { it.file }
-                        .firstOrNull()
-                    if (dir != null) {
-                        directory = PsiManager.getInstance(project).findDirectory(dir)
-                        return true
+                if (!moduleMatches(module)) return false
+
+                val dir = ModuleRootManager.getInstance(module).contentEntries.asSequence()
+                    .flatMap {
+                        it.getSourceFolders(
+                            if (test)
+                                JavaSourceRootType.TEST_SOURCE
+                            else
+                                JavaSourceRootType.SOURCE
+                        )
                     }
+                    .filter { !JavaProjectRootsUtil.isForGeneratedSources(it) }
+                    .mapNotNull { it.file }
+                    .firstOrNull()
+
+                if (dir != null) {
+                    directory = PsiManager.getInstance(project).findDirectory(dir)
+                    return true
                 }
 
                 return false
@@ -88,28 +117,51 @@ class ImplementExpectPlatformFix(private val platforms: List<Platform>) : LocalQ
                 }
             }
 
-            val dialog = ImplementExpectPlatformFixDialog(project, platform, packageName, method, directory)
-            dialog.show()
+            ImplementExpectPlatformFixDialog(
+                project,
+                platform,
+                packageName,
+                method,
+                directory
+            ).show()
         }
     }
-
     companion object {
         fun addMethod(project: Project, method: PsiMethod, clazz: PsiClass) {
+            // ❗ hard guard against duplicate insertion
+            val alreadyExists = clazz.methods.any { existing ->
+                existing.name == method.name &&
+                    existing.parameterList.parametersCount == method.parameterList.parametersCount
+            }
+
+            if (alreadyExists) return
+
             val elementFactory = JavaPsiFacade.getElementFactory(project)
+
             val template = elementFactory.createMethod(method.name, method.returnType)
 
-            // Copy the parameters to the template
             for (param in method.parameterList.parameters) {
                 template.parameterList.add(param)
             }
 
-            // Add the different modifiers. The public modifier is first removed to correct its place.
-            template.modifierList.setModifierProperty(PsiModifier.PUBLIC, false) // remove from list...
-            GenerateMembersUtil.copyAnnotations(method, template, *AnnotationType.EXPECT_PLATFORM.toTypedArray())
-            template.modifierList.setModifierProperty(PsiModifier.PUBLIC, true) // ... add to list
+            template.modifierList.setModifierProperty(PsiModifier.PUBLIC, false)
+
+            GenerateMembersUtil.copyAnnotations(
+                method,
+                template,
+                *AnnotationType.EXPECT_PLATFORM.toTypedArray()
+            )
+
+            template.modifierList.setModifierProperty(PsiModifier.PUBLIC, true)
             template.modifierList.setModifierProperty(PsiModifier.STATIC, true)
 
-            val inserted = GenerateMembersUtil.insert(clazz, template, clazz.methods.lastOrNull(), false)
+            val inserted = GenerateMembersUtil.insert(
+                clazz,
+                template,
+                clazz.methods.lastOrNull(),
+                false
+            )
+
             (inserted as? Navigatable)?.navigate(true)
         }
     }

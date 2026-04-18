@@ -20,7 +20,7 @@ enum class Platform(
     val fallbackPlatforms: List<Platform> = emptyList()
 ) {
     FABRIC(PlatformIds.FABRIC, "platform.fabric", "net.fabricmc.api"),
-    FORGE(PlatformIds.FORGE, "platform.forge", "net.minecraftforge.common")
+    FORGE(PlatformIds.FORGE, "platform.forge", "net.minecraftforge.common"),
     NEOFORGE(PlatformIds.NEOFORGE, "platform.neoforge", "net.neoforged.neoforge.common")
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
     ;
@@ -35,8 +35,12 @@ enum class Platform(
         val parts = className.split('.')
         val head = parts.dropLast(1).joinToString(separator = ".")
         val tail = parts.last().replace("$", "")
-        val platPackageStr = "platform";
+        val platPackageStr = platSubPackageName();
         return "$head.${platPackageStr}.${tail}Impl"
+    }
+
+    fun platSubPackageName(): String {
+        return "platform"
     }
 
     fun isIn(project: Project): Boolean =

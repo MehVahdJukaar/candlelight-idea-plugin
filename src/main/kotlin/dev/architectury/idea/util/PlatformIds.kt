@@ -8,6 +8,4 @@ object PlatformIds {
     const val FABRIC = "fabric"
     const val NEOFORGE = "neoforge"
     const val FORGE = "forge"
-    const val QUILT = "quilt"
-    const val PLATFORM = "platform"
 }
