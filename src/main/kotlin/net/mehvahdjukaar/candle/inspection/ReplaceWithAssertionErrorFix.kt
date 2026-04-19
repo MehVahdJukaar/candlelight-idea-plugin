@@ -5,11 +5,11 @@ import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
-import net.mehvahdjukaar.candle.util.ArchitecturyBundle
+import net.mehvahdjukaar.candle.util.CandleBundle
 
 class ReplaceWithAssertionErrorFix : LocalQuickFix {
     override fun getFamilyName(): String =
-        ArchitecturyBundle["inspection.expectPlatform.replaceWithAssertion"]
+        CandleBundle["inspection.expectPlatform.replaceWithAssertion"]
 
     override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
         val method = when (val element = descriptor.psiElement) {
@@ -36,7 +36,7 @@ class ReplaceWithAssertionErrorFix : LocalQuickFix {
 // Additional quick fix for missing body (similar)
 class AddAssertionErrorBodyFix : LocalQuickFix {
     override fun getFamilyName(): String =
-        ArchitecturyBundle["inspection.expectPlatform.addBody"]
+        CandleBundle["inspection.expectPlatform.addBody"]
 
     override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
         val method = descriptor.psiElement as? PsiMethod ?: return

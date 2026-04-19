@@ -14,6 +14,8 @@ enum class AnnotationType(private val annotations: Set<String>) : Set<String> by
     ),
     VIRTUAL_OVERRIDE(
         "net.mehvahdjukaar.candlelight.api.VirtualOverride"
+    ),
+    OPTIONAL_INTERFACE("net.mehvahdjukaar.candlelight.api.OptionalInterface"
     )
     ;
 

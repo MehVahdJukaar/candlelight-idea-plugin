@@ -3,7 +3,9 @@ package net.mehvahdjukaar.candle.util
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
+import dk.brics.automaton.SpecialOperations.getStrings
 import net.mehvahdjukaar.candle.inspection.ExpectedImplSignature
+import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 
 fun PsiModifierListOwner.hasAnnotation(type: AnnotationType): Boolean =
     type.any { hasAnnotation(it) }
@@ -83,21 +85,14 @@ val PsiMethod.platformMethodsByPlatform: Map<Platform, Set<PsiMethod>>
         }
     }
 
+
+
 /**
  * The platform implementations of this common method.
  */
 val PsiMethod.platformMethods: Set<PsiMethod>
     get() = platformMethodsByPlatform.flatMap { (_, methods) -> methods }.toSet()
 
-/**
- * The platforms for this `@PlatformOnly` method, or null if this method
- * is not platform-specific.
- */
-val PsiMethod.platformOnlyPlatforms: Set<String>?
-    get() {
-        val annotation = findAnnotation(AnnotationType.PLATFORM_ONLY) ?: return null
-        return Annotations.getStrings(annotation, "value").toSet()
-    }
 
 /**
  * The binary name of this class in dot-dollar format (eg. `a.b.C$D`)
@@ -124,6 +119,8 @@ fun PsiClass.asSequenceWithInnerClasses(): Sequence<PsiClass> =
  */
 fun <V : Any> Map<Platform, V>.getWithPlatformFallback(platform: Platform): V? =
     this[platform] ?: platform.fallbackPlatforms.asSequence().mapNotNull { getWithPlatformFallback(it) }.firstOrNull()
+
+
 
 /**
  * Gets the searching scope for searching for classes related to the [element].

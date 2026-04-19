@@ -19,7 +19,7 @@ import com.intellij.ui.EditorComboBox
 import com.intellij.ui.components.JBLabelDecorator
 import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.UIUtil
-import net.mehvahdjukaar.candle.util.ArchitecturyBundle
+import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.Platform
 import javax.swing.JComboBox
 import javax.swing.JComponent
@@ -43,7 +43,7 @@ class ImplementPlatformImplFixDialog(
     }
 
     init {
-        title = ArchitecturyBundle["inspection.implementExpectPlatform.single", platform]
+        title = CandleBundle["inspection.implementExpectPlatform.single", platform]
         init()
         val comboBox = EditorComboBox("")
         comboBox.addItemListener {

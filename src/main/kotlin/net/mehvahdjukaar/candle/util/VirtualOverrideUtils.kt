@@ -1,11 +1,17 @@
 // VirtualOverrideUtils.kt
 package net.mehvahdjukaar.candle.util
 
-import com.intellij.psi.*
+import com.intellij.psi.CommonClassNames
+import com.intellij.psi.JavaPsiFacade
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiModifier
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.InheritanceUtil
+import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 
 // ---------------------------------------------------------------------
 // Public API
@@ -67,15 +73,25 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
         val index = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
 
         val availablePlatforms = Platform.availables(project)
+
+        // All supertypes of this common class, excluding itself and Object
+        val commonSuperTypes = collectAllSuperTypes(this, dependencies)
+            .filter { it.qualifiedName != CommonClassNames.JAVA_LANG_OBJECT && it != this }
+
+        // Handle @OptionalInterface annotations (shallow – only on this class)
+        val implicitInterfaces = collectOptionalInterfaces(this)
+
+        val allSuperTypesStrings = commonSuperTypes
+            .mapNotNull { it.qualifiedName }
+            .toMutableList()
+        allSuperTypesStrings += implicitInterfaces
+
+
         for (platform in availablePlatforms) {
             val platformModule = platform.findModuleForPlatform(project) ?: continue
 
-            // All supertypes of this common class, excluding itself and Object
-            val commonSuperTypes = collectAllSuperTypes(this, dependencies)
-                .filter { it.qualifiedName != CommonClassNames.JAVA_LANG_OBJECT && it != this }
 
-            for (superType in commonSuperTypes) {
-                val qualifiedName = superType.qualifiedName ?: continue
+            for (qualifiedName in allSuperTypesStrings) {
                 val platformSuperType = JavaPsiFacade.getInstance(project)
                     .findClass(qualifiedName, GlobalSearchScope.moduleRuntimeScope(platformModule, false))
                     ?: continue
@@ -98,6 +114,20 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
         CachedValueProvider.Result(index, *dependencies.toTypedArray())
     }
 }
+
+/**
+ * Checks if this method is a valid virtual override for the given platform.
+ * Returns true if the method exists in the platform's supertype hierarchy.
+ */
+fun PsiMethod.isValidVirtualOverrideForPlatform(platformId: String): Boolean {
+    val containingClass = containingClass ?: return false
+    val signature = signatureKey()
+    val index = containingClass.getVirtualMethodIndex()
+    val methodsForSignature = index[signature] ?: return false
+
+    return methodsForSignature.any { it.platform.id.equals(platformId, ignoreCase = true) }
+}
+
 
 private fun isOverridable(method: PsiMethod): Boolean {
     return !(method.isConstructor || method.hasModifierProperty(PsiModifier.STATIC) ||
@@ -125,6 +155,20 @@ private fun collectAllSuperTypes(psiClass: PsiClass, dependencies: MutableSet<Ps
         dependencies.add(iface)
         result.addAll(collectAllSuperTypes(iface, dependencies))
     }
+
+
+
     result.add(psiClass)
     return result
+}
+
+private fun collectOptionalInterfaces(psiClass: PsiClass): List<String> {
+    val allImplicitAnnotations = mutableListOf<String>();
+    for (ann in AnnotationType.OPTIONAL_INTERFACE) {
+        val optionalAnnotation = psiClass.getAnnotation(ann)
+        if (optionalAnnotation != null) {
+            allImplicitAnnotations.addAll(optionalAnnotation.splitValueStrings("value"));
+        }
+    }
+    return allImplicitAnnotations
 }

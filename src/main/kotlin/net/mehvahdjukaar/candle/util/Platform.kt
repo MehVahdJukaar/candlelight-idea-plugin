@@ -35,7 +35,7 @@ enum class Platform(
     fun isIn(project: Project): Boolean =
         JavaPsiFacade.getInstance(project).findPackage(identifyingPackage) != null
 
-    override fun toString() = ArchitecturyBundle[translationKey]
+    override fun toString() = CandleBundle[translationKey]
 
     companion object {
 

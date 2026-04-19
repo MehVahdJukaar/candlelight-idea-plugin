@@ -10,10 +10,10 @@ import com.intellij.psi.PsiVariable
 object Annotations {
     private const val BARE_ANNOTATION_PROPERTY = "value"
 
-    fun getStrings(annotation: PsiAnnotation, key: String): List<String> {
-        val valueElement = annotation.findAttributeValue(key) ?: run {
+    fun PsiAnnotation.splitValueStrings(key: String): List<String> {
+        val valueElement = this.findAttributeValue(key) ?: run {
             if (key == BARE_ANNOTATION_PROPERTY) {
-                annotation.findAttributeValue(null)
+                this.findAttributeValue(null)
             }
 
             null

@@ -104,7 +104,8 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
         val exceptions = method.throwsList.referenceElements.joinToString(", ") { it.canonicalText }
         val throwsClause = if (exceptions.isNotEmpty()) " throws $exceptions" else ""
 
-        val virtualOverrideAnnotation = AnnotationType.VIRTUAL_OVERRIDE.first()
+        // Use simple annotation name instead of fully qualified
+        val virtualOverrideAnnotation = AnnotationType.VIRTUAL_OVERRIDE.first().substringAfterLast('.')
         val platformId = pvm.platform.id.lowercase() // e.g., "neoforge", "fabric"
 
         return buildString {
@@ -119,6 +120,7 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
             append("}\n")
         }
     }
+
     private fun getSimpleTypeName(psiType: PsiType): String {
         // Use presentable text which typically shows simple names
         return psiType.presentableText

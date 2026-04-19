@@ -30,6 +30,13 @@
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="net.mehvahdjukaar.candle.gutter.VirtualOverrideLineMarkerProvider"/>
 
+        <localInspection language="JAVA"
+                         shortName="VirtualOverride"
+                         displayName="Invalid @VirtualOverride"
+                         groupName="Candlelight"
+                         enabledByDefault="true"
+                         level="ERROR"
+                         implementationClass="net.mehvahdjukaar.candle.inspection.VirtualOverrideInspection"/>
 
         <localInspection language="JAVA"
                          displayName="Unimplemented @PlatformImpl method"
@@ -37,13 +44,6 @@
                          enabledByDefault="true"
                          level="WARNING"
                          implementationClass="net.mehvahdjukaar.candle.inspection.UnimplementedExpectPlatformInspection"/>
-
-        <localInspection language="JAVA"
-                         displayName="Unsafe @PlatformOnly call"
-                         groupName="Candlelight"
-                         enabledByDefault="true"
-                         level="WARNING"
-                         implementationClass="net.mehvahdjukaar.candle.inspection.UnsafePlatformOnlyCallInspection"/>
 
         <localInspection language="JAVA"
                          shortName="ExpectPlatformBody"

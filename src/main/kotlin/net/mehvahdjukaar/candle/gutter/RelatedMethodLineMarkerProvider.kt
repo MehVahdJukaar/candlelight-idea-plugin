@@ -6,7 +6,7 @@ import com.intellij.codeInsight.daemon.LineMarkerProviderDescriptor
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
-import net.mehvahdjukaar.candle.util.ArchitecturyBundle
+import net.mehvahdjukaar.candle.util.CandleBundle
 import javax.swing.Icon
 
 abstract class RelatedMethodLineMarkerProvider<M : PsiElement> : LineMarkerProviderDescriptor() {
@@ -30,13 +30,13 @@ abstract class RelatedMethodLineMarkerProvider<M : PsiElement> : LineMarkerProvi
                 leaf,
                 leaf.textRange,
                 icon,
-                { ArchitecturyBundle[tooltipTranslationKey] },
+                { CandleBundle[tooltipTranslationKey] },
                 DefaultGutterIconNavigationHandler(
                     related,
-                    "<html>" + ArchitecturyBundle[navTitleTranslationKey, "<b>$name</b>", related.size]
+                    "<html>" + CandleBundle[navTitleTranslationKey, "<b>$name</b>", related.size]
                 ),
                 GutterIconRenderer.Alignment.LEFT,
-                { ArchitecturyBundle[tooltipTranslationKey] }
+                { CandleBundle[tooltipTranslationKey] }
             )
         }
 

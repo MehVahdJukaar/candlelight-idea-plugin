@@ -5,7 +5,7 @@ import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import net.mehvahdjukaar.candle.util.AnnotationType
-import net.mehvahdjukaar.candle.util.ArchitecturyBundle
+import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.Platform
 import net.mehvahdjukaar.candle.util.findAnnotation
 import net.mehvahdjukaar.candle.util.hasPlatformImplAnnotation
@@ -51,7 +51,7 @@ class UnimplementedExpectPlatformInspection : LocalInspectionTool() {
 
                     holder.registerProblem(
                         method.findAnnotation(AnnotationType.PLATFORM_IMPLEMENTATION) ?: method.nameIdentifier ?: method,
-                        ArchitecturyBundle["inspection.missingExpectPlatform", method.name, missingPlatforms.joinToString()],
+                        CandleBundle["inspection.missingExpectPlatform", method.name, missingPlatforms.joinToString()],
                         *fixes.toTypedArray()
                     )
                 }

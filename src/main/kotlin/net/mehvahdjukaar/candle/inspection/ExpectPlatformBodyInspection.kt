@@ -4,7 +4,7 @@ package net.mehvahdjukaar.candle.inspection
 import com.intellij.codeInspection.LocalInspectionTool
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.psi.*
-import net.mehvahdjukaar.candle.util.ArchitecturyBundle
+import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.hasPlatformImplAnnotation
 
 class ExpectPlatformBodyInspection : LocalInspectionTool() {
@@ -25,7 +25,7 @@ class ExpectPlatformBodyInspection : LocalInspectionTool() {
                     // Missing body entirely (shouldn't happen for non-abstract methods)
                     holder.registerProblem(
                         method.nameIdentifier ?: method,
-                        ArchitecturyBundle["inspection.expectPlatform.missingBody"],
+                        CandleBundle["inspection.expectPlatform.missingBody"],
                         AddAssertionErrorBodyFix()
                     )
                     return
@@ -35,7 +35,7 @@ class ExpectPlatformBodyInspection : LocalInspectionTool() {
                 if (!isValidExpectBody(body)) {
                     holder.registerProblem(
                         body,
-                        ArchitecturyBundle["inspection.expectPlatform.invalidBody"],
+                        CandleBundle["inspection.expectPlatform.invalidBody"],
                         ReplaceWithAssertionErrorFix()
                     )
                 }

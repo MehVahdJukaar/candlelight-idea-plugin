@@ -12,7 +12,7 @@ import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.pom.Navigatable
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
-import net.mehvahdjukaar.candle.util.ArchitecturyBundle
+import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.Platform
 import net.mehvahdjukaar.candle.util.getDefaultReturnValue
 import org.jetbrains.jps.model.java.JavaSourceRootType
@@ -21,9 +21,9 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
     override fun getFamilyName(): String {
         val platform = platforms.singleOrNull()
         return if (platform != null)
-            ArchitecturyBundle["inspection.implementExpectPlatform.single", platform]
+            CandleBundle["inspection.implementExpectPlatform.single", platform]
         else
-            ArchitecturyBundle["inspection.implementExpectPlatform"]
+            CandleBundle["inspection.implementExpectPlatform"]
     }
 
     override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
