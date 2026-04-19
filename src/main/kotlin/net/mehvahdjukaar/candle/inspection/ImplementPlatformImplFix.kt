@@ -31,7 +31,7 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
         val facade = JavaPsiFacade.getInstance(project)
         val missingPackages = HashMap<Platform, String>()
 
-        val implClassName = Platform.getImplementationName(method.containingClass!!)
+        val implClassName = Platform.getPlatformImplImplementationName(method.containingClass!!)
         val candidateClasses = facade.findClasses(implClassName, GlobalSearchScope.projectScope(project))
 
         val expectedSignature = ExpectedImplSignature.fromExpectMethod(method)

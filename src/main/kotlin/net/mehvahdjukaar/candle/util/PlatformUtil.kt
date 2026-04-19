@@ -3,9 +3,7 @@ package net.mehvahdjukaar.candle.util
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
-import dk.brics.automaton.SpecialOperations.getStrings
 import net.mehvahdjukaar.candle.inspection.ExpectedImplSignature
-import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 
 fun PsiModifierListOwner.hasAnnotation(type: AnnotationType): Boolean =
     type.any { hasAnnotation(it) }
@@ -71,7 +69,7 @@ val PsiMethod.platformMethodsByPlatform: Map<Platform, Set<PsiMethod>>
         val expectedSignature = ExpectedImplSignature.fromExpectMethod(this)
 
         return Platform.entries.associateWith { platform ->
-            val implementationClassName = Platform.getImplementationName(clazz)
+            val implementationClassName = Platform.getPlatformImplImplementationName(clazz)
 
             JavaPsiFacade.getInstance(project)
                 .findClasses(implementationClassName, getScopeFor(this))

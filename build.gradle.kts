@@ -32,8 +32,8 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             // "251" corresponds to the 2025.1 release cycle
-            sinceBuild.set("251")
-            untilBuild.set("251.*")
+           // sinceBuild.set("251")
+           // untilBuild.set("251.*")
         }
     }
 }

@@ -44,7 +44,7 @@ enum class Platform(
          */
 
 
-        fun getImplementationName(clazz: PsiClass): String {
+        fun getPlatformImplImplementationName(clazz: PsiClass): String {
             val className = clazz.binaryName ?: error("Could not get binary name of $this")
             val parts = className.split('.')
             val head = parts.dropLast(1).joinToString(separator = ".")
@@ -57,7 +57,7 @@ enum class Platform(
             return "platform"
         }
 
-        fun availables(project: Project): List<Platform> {
+        fun listAvailable(project: Project): List<Platform> {
             return Platform.entries.filter { it.isIn(project) }
         }
     }

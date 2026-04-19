@@ -1,7 +1,7 @@
 # Candlelight IDEA Plugin
 
 An IntelliJ IDEA plugin to help with developing Minecraft mods in a cross-platform setup
-Additional features available when using the [Candlelight](https://github.com/MehVahdJukaar/candle) gradle plugin
+Additional features available when using the [Candlelight](https://github.com/MehVahdJukaar/candle) Gradle plugin
 
 
 ## Disclaimer
@@ -13,25 +13,18 @@ It's distributed under the same license.
 
 Tested on Intellij 2025.3
 
-### @PlatformImpl Support
+### @PlatformImpl
+![Example of gutter icons](doc/plat_impl.png)
 -  navigation between @PlatformImpl methods and their platform implementations
+-  Inspection warnings for missing platform implementations with quick fixes
+-  Quick fix @PlatformImpl method with erroneous body
 
-    ![Example of gutter icons](doc/gutter-icon.png)
 
-- Inspection warnings for missing platform implementations with quick fixes
-https://doc/missing-platform-inspection.png
 
-- ASM transformation automatically replaces method bodies with delegation calls
-
-### Virtual Overrides
-- Detects methods that override platform‑specific members (e.g., NeoForge‑only methods in Block) and treats them as valid overrides in common code.
-
-- Code completion suggests platform‑specific overridable methods
-https://doc/virtual-override-completion.png
-
-- Gutter icons navigate from a virtual override to its platform declaration
-https://doc/virtual-override-gutter.png
-
-- Implicit usage marks virtual overrides and their parameters as used
-
-- Platform‑specific only – shows suggestions and gutter icons only for methods present in some, but not all, platforms
+### @VirtualOverride
+![Example of gutter icons](doc/virtual_override.png)
+-  Detects methods that override platform‑specific members (e.g., NeoForge‑only methods in Block) and treats them as valid overrides in common code.
+-  Code completion suggests platform‑specific overridable methods
+-  Gutter icons navigate from a virtual override to its platform declaration
+-  Implicit usage marks virtual overrides and their parameters as used
+-  Works with @OptionalInterface annotation too

@@ -20,7 +20,7 @@ class UnimplementedExpectPlatformInspection : LocalInspectionTool() {
                 val containingClass = method.containingClass ?: return
                 val project = method.project
                 val facade = JavaPsiFacade.getInstance(project)
-                val implClassName = Platform.getImplementationName(containingClass)
+                val implClassName = Platform.getPlatformImplImplementationName(containingClass)
 
                 // Find all candidate implementation classes across the project
                 val candidateClasses = facade.findClasses(implClassName, GlobalSearchScope.projectScope(project))
@@ -28,7 +28,7 @@ class UnimplementedExpectPlatformInspection : LocalInspectionTool() {
                 // Build the expected signature of the implementation method
                 val expectedSignature = ExpectedImplSignature.fromExpectMethod(method)
 
-                val missingPlatforms = Platform.availables(project).filter { platform ->
+                val missingPlatforms = Platform.listAvailable(project).filter { platform ->
 
                     // Find the impl class that belongs to this platform's module
                     val implClass = candidateClasses.firstOrNull { platform.hasClass(it) }

@@ -1,6 +1,7 @@
 // VirtualOverrideUtils.kt
 package net.mehvahdjukaar.candle.util
 
+import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.psi.CommonClassNames
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
@@ -12,7 +13,6 @@ import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.InheritanceUtil
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
-
 // ---------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------
@@ -33,7 +33,7 @@ fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
     val methodsForSignature = index[signature] ?: return emptySet()
 
     val platforms = methodsForSignature.map { it.platform }.toSet()
-    val availablePlatforms = Platform.availables(project)
+    val availablePlatforms = Platform.listAvailable(project)
 
     // Return methods only if they are platform‑specific
     return if (platforms.isNotEmpty() && platforms.size < availablePlatforms.size) {
@@ -49,7 +49,7 @@ fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
  */
 fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMethod> {
     val index = getVirtualMethodIndex()
-    val availablePlatforms = Platform.availables(project)
+    val availablePlatforms = Platform.listAvailable(project)
     return index.values
         .filter { methods ->
             val platforms = methods.map { it.platform }.toSet()
@@ -71,14 +71,13 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
     return CachedValuesManager.getCachedValue(this) {
         val dependencies = mutableSetOf<PsiElement>(this)
         val index = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
+        val trackers = mutableListOf<Any>()
 
-        val availablePlatforms = Platform.availables(project)
+        val availablePlatforms = Platform.listAvailable(project)
 
-        // All supertypes of this common class, excluding itself and Object
         val commonSuperTypes = collectAllSuperTypes(this, dependencies)
             .filter { it.qualifiedName != CommonClassNames.JAVA_LANG_OBJECT && it != this }
 
-        // Handle @OptionalInterface annotations (shallow – only on this class)
         val implicitInterfaces = collectOptionalInterfaces(this)
 
         val allSuperTypesStrings = commonSuperTypes
@@ -86,18 +85,22 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
             .toMutableList()
         allSuperTypesStrings += implicitInterfaces
 
+        val platformHierarchyCache = mutableMapOf<PsiClass, Set<PsiClass>>()
 
         for (platform in availablePlatforms) {
             val platformModule = platform.findModuleForPlatform(project) ?: continue
-
+            trackers.add(ModuleRootManager.getInstance(platformModule))
 
             for (qualifiedName in allSuperTypesStrings) {
+                val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(platformModule, false)
                 val platformSuperType = JavaPsiFacade.getInstance(project)
-                    .findClass(qualifiedName, GlobalSearchScope.moduleRuntimeScope(platformModule, false))
+                    .findClass(qualifiedName, scope)
                     ?: continue
 
                 dependencies.add(platformSuperType)
-                val platformHierarchy = collectAllSuperTypes(platformSuperType, dependencies)
+                val platformHierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
+                    collectAllSuperTypes(platformSuperType, dependencies)
+                }
 
                 for (platformClass in platformHierarchy) {
                     for (method in platformClass.methods) {
@@ -111,7 +114,7 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
             }
         }
 
-        CachedValueProvider.Result(index, *dependencies.toTypedArray())
+        CachedValueProvider.Result(index, *dependencies.toTypedArray(), *trackers.toTypedArray())
     }
 }
 

@@ -88,7 +88,7 @@ class ImplementPlatformImplFixDialog(
                     packageName
                 )
 
-                val className = Platform.getImplementationName(method.containingClass!!)
+                val className = Platform.getPlatformImplImplementationName(method.containingClass!!)
                 val clazz = JavaDirectoryService.getInstance().getClasses(direction)
                     .firstOrNull { it.name == className.substringAfterLast('.') }
                     ?: JavaDirectoryService.getInstance().createClass(direction, className.substringAfterLast('.'))
