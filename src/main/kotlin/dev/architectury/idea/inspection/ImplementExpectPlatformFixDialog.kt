@@ -27,7 +27,7 @@ import javax.swing.JLabel
 
 class ImplementExpectPlatformFixDialog(
     private val project: Project,
-    private val platform: Platform,
+    platform: Platform,
     private val packageName: String,
     private val method: PsiMethod,
     defaultDirectory: PsiDirectory?

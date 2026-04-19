@@ -4,7 +4,6 @@ import com.intellij.codeInspection.LocalInspectionTool
 import com.intellij.codeInspection.ProblemsHolder
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.util.PsiTypesUtil
 import dev.architectury.idea.util.AnnotationType
 import dev.architectury.idea.util.ArchitecturyBundle
 import dev.architectury.idea.util.Platform

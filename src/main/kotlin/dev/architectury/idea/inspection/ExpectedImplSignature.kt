@@ -9,7 +9,6 @@ data class ExpectedImplSignature(
 ) {
 
 
-    // Add to ExpectedImplSignature class
     fun matchesImplMethod(implMethod: PsiMethod): Boolean {
         // Implementation method must be static
         if (!implMethod.hasModifierProperty(PsiModifier.STATIC)) return false
@@ -19,7 +18,7 @@ data class ExpectedImplSignature(
         val implParams = implMethod.parameterList.parameters
         if (implParams.size != parameterTypes.size) return false
         implParams.zip(parameterTypes).all { (param, expectedType) ->
-            param.type.equals(expectedType)
+            param.type == expectedType
         }
         // Return type must match
         val implReturn = implMethod.returnType ?: PsiType.VOID

@@ -5,9 +5,6 @@ import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import dev.architectury.idea.inspection.ExpectedImplSignature
 
-val PsiMethod.isStatic: Boolean
-    get() = modifierList.hasModifierProperty(PsiModifier.STATIC)
-
 fun PsiModifierListOwner.hasAnnotation(type: AnnotationType): Boolean =
     type.any { hasAnnotation(it) }
 

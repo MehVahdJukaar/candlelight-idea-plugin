@@ -19,15 +19,21 @@
     <depends>org.jetbrains.kotlin</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <codeInsight.lineMarkerProvider language="JAVA" implementationClass="dev.architectury.idea.gutter.CommonMethodLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="JAVA" implementationClass="dev.architectury.idea.gutter.PlatformMethodLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin" implementationClass="dev.architectury.idea.kotlin.gutter.CommonFunctionLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin" implementationClass="dev.architectury.idea.kotlin.gutter.PlatformFunctionLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin" implementationClass="dev.architectury.idea.kotlin.gutter.CommonPropertyLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin" implementationClass="dev.architectury.idea.kotlin.gutter.PlatformPropertyLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="JAVA"
+                                        implementationClass="dev.architectury.idea.gutter.CommonMethodLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="JAVA"
+                                        implementationClass="dev.architectury.idea.gutter.PlatformMethodLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="kotlin"
+                                        implementationClass="dev.architectury.idea.kotlin.gutter.CommonFunctionLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="kotlin"
+                                        implementationClass="dev.architectury.idea.kotlin.gutter.PlatformFunctionLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="kotlin"
+                                        implementationClass="dev.architectury.idea.kotlin.gutter.CommonPropertyLineMarkerProvider"/>
+        <codeInsight.lineMarkerProvider language="kotlin"
+                                        implementationClass="dev.architectury.idea.kotlin.gutter.PlatformPropertyLineMarkerProvider"/>
 
         <localInspection language="JAVA"
-                         displayName="Unimplemented @ExpectPlatform method"
+                         displayName="Unimplemented @PlatformImpl method"
                          groupName="Architectury"
                          enabledByDefault="true"
                          level="WARNING"
@@ -39,6 +45,14 @@
                          enabledByDefault="true"
                          level="WARNING"
                          implementationClass="dev.architectury.idea.inspection.UnsafePlatformOnlyCallInspection"/>
+
+        <localInspection language="JAVA"
+                         shortName="ExpectPlatformBody"
+                         displayName="Invalid @PlatformImpl method body"
+                         groupName="Architectury"
+                         enabledByDefault="true"
+                         level="WARNING"
+                         implementationClass="dev.architectury.idea.inspection.ExpectPlatformBodyInspection"/>
 
         <implicitUsageProvider implementation="dev.architectury.idea.insight.ExpectPlatformImplicitUsageProvider"/>
     </extensions>
