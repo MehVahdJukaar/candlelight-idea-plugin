@@ -22,9 +22,9 @@ Tested on Intellij 2025.3
 
 
 ### @VirtualOverride
-![Example of gutter icons](doc/virtual_override.png)
--  Detects methods that override platform‑specific members (e.g., NeoForge‑only methods in Block) and treats them as valid overrides in common code.
+![Example of virtual override completion](doc/virtual_override.png)
 -  Code completion suggests platform‑specific overridable methods
+-  Detects methods that override platform‑specific members (e.g., NeoForge‑only methods in Block) and treats them as valid overrides in common code.
 -  Gutter icons navigate from a virtual override to its platform declaration
 -  Implicit usage marks virtual overrides and their parameters as used
 -  Works with @OptionalInterface annotation too

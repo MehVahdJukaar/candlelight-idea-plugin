@@ -1,17 +1,13 @@
 <idea-plugin>
     <id>net.mehvahdjukaar.candlelight</id>
     <name>Candlelight Idea Plugin</name>
-    <vendor url="https://github.com/MehVahdJukaar/Supplementaries">Candlelight</vendor>
+    <vendor url="https://github.com/MehVahdJukaar/architectury-idea-plugin">Candlelight</vendor>
 
     <description><![CDATA[
-    Adds helpers for the cross-platform Minecraft modding framework Candlelight.
+    Companion plugin for the Candlelight gradle plugin.
     ]]></description>
 
-    <change-notes><![CDATA[
-    <ul>
-    <li>Added support for IDEA 2025.3</li>
-    </ul>
-    ]]></change-notes>
+    <icon path="/pluginIcon.png"/>
 
     <extensions defaultExtensionNs="org.jetbrains.kotlin">
         <supportsKotlinPluginMode supportsK2="true"/>

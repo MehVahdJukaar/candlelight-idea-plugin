@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "net.mehvahdjukaar"
-version = "1.0.0"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -49,5 +49,21 @@ kotlin {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
         languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+    }
+}
+
+
+tasks.register("github") {
+    group = "publish"
+    dependsOn("build")
+    doLast {
+        val version = project.version.toString()
+
+        exec {
+            commandLine("git", "tag", "v$version")
+        }
+        exec {
+            commandLine("git", "push", "origin", "v$version")
+        }
     }
 }
