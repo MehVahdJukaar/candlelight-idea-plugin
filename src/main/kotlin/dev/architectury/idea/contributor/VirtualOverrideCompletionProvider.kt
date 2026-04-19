@@ -4,7 +4,6 @@ import com.intellij.codeInsight.completion.CompletionProvider
 import com.intellij.codeInsight.completion.CompletionResultSet
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
-import com.intellij.codeInsight.lookup.LookupElementDecorator.withInsertHandler
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiDocumentManager
@@ -13,8 +12,8 @@ import com.intellij.psi.PsiType
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
-import dev.architectury.idea.insight.PlatformVirtualMethod
-import dev.architectury.idea.insight.findAllPlatformVirtualOverridableMethods
+import dev.architectury.idea.util.PlatformVirtualMethod
+import dev.architectury.idea.util.findAllPlatformVirtualOverridableMethods
 import dev.architectury.idea.util.AnnotationType
 import dev.architectury.idea.util.getDefaultReturnValue
 import dev.architectury.idea.util.isCommon

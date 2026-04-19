@@ -3,7 +3,7 @@ package dev.architectury.idea.gutter
 import com.intellij.icons.AllIcons
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
-import dev.architectury.idea.insight.findPlatformVirtualOverrides
+import dev.architectury.idea.util.findPlatformVirtualOverrides
 import javax.swing.Icon
 
 abstract class AbstractVirtualOverrideLineMarkerProvider<M : PsiElement> :

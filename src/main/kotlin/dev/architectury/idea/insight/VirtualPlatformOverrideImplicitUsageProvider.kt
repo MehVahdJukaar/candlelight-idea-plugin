@@ -5,6 +5,7 @@ import com.intellij.codeInsight.daemon.ImplicitUsageProvider
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiParameter
+import dev.architectury.idea.util.findPlatformVirtualOverrides
 
 class VirtualPlatformOverrideImplicitUsageProvider : ImplicitUsageProvider {
     override fun isImplicitUsage(element: PsiElement): Boolean {
