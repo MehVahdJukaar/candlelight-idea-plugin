@@ -9,6 +9,10 @@ Additional features available when using the [Candlelight](https://github.com/Me
 This plugin is born out of a fork or [Architectury IDEA plugin](https://github.com/architectury/architectury-idea-plugin).
 It's distributed under the same license.
 
+## Installation
+
+You can get this from the **Releases** section here and manually add it to IntelliJ.
+
 ## Features
 
 Tested on Intellij 2025.3
