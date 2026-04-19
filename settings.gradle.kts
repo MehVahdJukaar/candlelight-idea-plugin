@@ -1,1 +1,1 @@
-rootProject.name = "architectury-idea-plugin"
+rootProject.name = "candlelight-idea-plugin"

@@ -3,8 +3,8 @@ plugins {
     kotlin("jvm") version "2.3.0"
 }
 
-group = "dev.architectury"
-version = "1.7.0-candlelight"
+group = "net.mehvahdjukaar"
+version = "1.0.0"
 
 repositories {
     mavenCentral()

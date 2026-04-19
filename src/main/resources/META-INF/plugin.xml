@@ -1,17 +1,21 @@
 <idea-plugin>
-    <id>me.shedaniel.architectury</id>
-    <name>Architectury</name>
-    <vendor url="https://github.com/architectury">Architectury</vendor>
+    <id>net.mehvahdjukaar.candlelight</id>
+    <name>Candlelight Idea Plugin</name>
+    <vendor url="https://github.com/MehVahdJukaar/Supplementaries">Candlelight</vendor>
 
     <description><![CDATA[
-    Adds helpers for the cross-platform Minecraft modding framework Architectury.
+    Adds helpers for the cross-platform Minecraft modding framework Candlelight.
     ]]></description>
 
     <change-notes><![CDATA[
     <ul>
-    <li>Added support for IDEA 2022.3</li>
+    <li>Added support for IDEA 2025.3</li>
     </ul>
     ]]></change-notes>
+
+    <extensions defaultExtensionNs="org.jetbrains.kotlin">
+        <supportsKotlinPluginMode supportsK2="true"/>
+    </extensions>
 
     <!-- please see https://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
          on how to target different products -->
@@ -20,53 +24,42 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="dev.architectury.idea.gutter.CommonMethodLineMarkerProvider"/>
+                                        implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="dev.architectury.idea.gutter.PlatformMethodLineMarkerProvider"/>
+                                        implementationClass="net.mehvahdjukaar.candle.gutter.PlatformMethodLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="dev.architectury.idea.gutter.VirtualOverrideLineMarkerProvider"/>
-
-
-        <codeInsight.lineMarkerProvider language="kotlin"
-                                        implementationClass="dev.architectury.idea.kotlin.gutter.CommonFunctionLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin"
-                                        implementationClass="dev.architectury.idea.kotlin.gutter.PlatformFunctionLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin"
-                                        implementationClass="dev.architectury.idea.kotlin.gutter.CommonPropertyLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="kotlin"
-                                        implementationClass="dev.architectury.idea.kotlin.gutter.PlatformPropertyLineMarkerProvider"/>
-
+                                        implementationClass="net.mehvahdjukaar.candle.gutter.VirtualOverrideLineMarkerProvider"/>
 
 
         <localInspection language="JAVA"
                          displayName="Unimplemented @PlatformImpl method"
-                         groupName="Architectury"
+                         groupName="Candlelight"
                          enabledByDefault="true"
                          level="WARNING"
-                         implementationClass="dev.architectury.idea.inspection.UnimplementedExpectPlatformInspection"/>
+                         implementationClass="net.mehvahdjukaar.candle.inspection.UnimplementedExpectPlatformInspection"/>
 
         <localInspection language="JAVA"
                          displayName="Unsafe @PlatformOnly call"
-                         groupName="Architectury"
+                         groupName="Candlelight"
                          enabledByDefault="true"
                          level="WARNING"
-                         implementationClass="dev.architectury.idea.inspection.UnsafePlatformOnlyCallInspection"/>
+                         implementationClass="net.mehvahdjukaar.candle.inspection.UnsafePlatformOnlyCallInspection"/>
 
         <localInspection language="JAVA"
                          shortName="ExpectPlatformBody"
                          displayName="Invalid @PlatformImpl method body"
-                         groupName="Architectury"
+                         groupName="Candlelight"
                          enabledByDefault="true"
                          level="WARNING"
-                         implementationClass="dev.architectury.idea.inspection.ExpectPlatformBodyInspection"/>
+                         implementationClass="net.mehvahdjukaar.candle.inspection.ExpectPlatformBodyInspection"/>
 
         <completion.contributor
             language="JAVA"
-            implementationClass="dev.architectury.idea.contributor.VirtualOverrideCompletionContributor"/>
+            implementationClass="net.mehvahdjukaar.candle.contributor.VirtualOverrideCompletionContributor"/>
 
-        <implicitUsageProvider implementation="dev.architectury.idea.insight.ExpectPlatformImplicitUsageProvider"/>
+        <implicitUsageProvider implementation="net.mehvahdjukaar.candle.insight.ExpectPlatformImplicitUsageProvider"/>
         <implicitUsageProvider
-            implementation="dev.architectury.idea.insight.VirtualPlatformOverrideImplicitUsageProvider"/>
+            implementation="net.mehvahdjukaar.candle.insight.VirtualPlatformOverrideImplicitUsageProvider"/>
     </extensions>
 
     <actions>
