@@ -1,45 +1,53 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
-    id("org.jetbrains.intellij") version "1.17+"
-    kotlin("jvm") version "2.0+"
+    id("org.jetbrains.intellij.platform") version "2.3.0"
+    kotlin("jvm") version "2.3.0"
 }
-
-val kotlinVersion = "1.9.0"
-val kotlinLanguageVersion = kotlinVersion.substringBeforeLast('.')
 
 group = "dev.architectury"
 version = "1.7.0-candlelight"
 
 repositories {
     mavenCentral()
+
+    intellijPlatform {
+        defaultRepositories()
+        intellijDependencies()
+    }
 }
+
 
 dependencies {
-    implementation(kotlin("stdlib", kotlinVersion))
+    intellijPlatform {
+        // Try a confirmed 2024 or 2025 version
+        create("IC", "2025.1")
+        bundledPlugin("com.intellij.java")
+
+        bundledPlugin("org.jetbrains.kotlin")
+        instrumentationTools()
+
+    }
 }
 
-// See https://github.com/JetBrains/gradle-intellij-plugin/
-intellij {
-    version.set("2023.3+")
-    plugins.set(listOf("java", "Kotlin"))
-    updateSinceUntilBuild.set(false)
+intellijPlatform {
+    pluginConfiguration {
+        ideaVersion {
+            // "251" corresponds to the 2025.1 release cycle
+            sinceBuild.set("251")
+            untilBuild.set("251.*")
+        }
+    }
 }
 
 tasks {
     jar {
         from("COPYING", "COPYING.LESSER")
     }
+}
 
-    withType<KotlinCompile> {
-        kotlinOptions.jvmTarget = "17"
-        kotlinOptions {
-            apiVersion = kotlinLanguageVersion
-            languageVersion = kotlinLanguageVersion
-        }
-    }
-
-    patchPluginXml {
-        sinceBuild.set("221")
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
     }
 }
