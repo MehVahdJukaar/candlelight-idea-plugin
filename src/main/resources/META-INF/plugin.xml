@@ -19,6 +19,10 @@
     <depends>org.jetbrains.kotlin</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+
+            <postStartupActivity implementation="net.mehvahdjukaar.flash.FlashPlugin"/>
+
+
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="JAVA"

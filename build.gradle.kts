@@ -26,6 +26,14 @@ dependencies {
         instrumentationTools()
 
     }
+    implementation("jakarta.servlet:jakarta.servlet-api:6.0.0")
+    implementation("org.eclipse.jetty:jetty-server:12.0.8")
+    implementation("org.eclipse.jetty.ee10:jetty-ee10-servlet:12.0.8")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
+    implementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
+    implementation("org.glassfish.jersey.core:jersey-server:3.1.5")
+    implementation("org.glassfish.jersey.containers:jersey-container-servlet:3.1.5")
+    implementation("org.glassfish.jersey.inject:jersey-hk2:3.1.5")
 }
 
 intellijPlatform {
