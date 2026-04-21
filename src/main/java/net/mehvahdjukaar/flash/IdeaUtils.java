@@ -9,6 +9,7 @@ import com.intellij.psi.*;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import com.intellij.psi.search.searches.OverridingMethodsSearch;
+import com.intellij.psi.search.searches.ClassInheritorsSearch;
 import com.intellij.util.Query;
 
 import java.util.ArrayList;
@@ -62,14 +63,12 @@ public class IdeaUtils {
         }
         List<String> superclasses = new ArrayList<>();
         PsiClass current = psiClass.getSuperClass();
-        int count = 0;
-        while (current != null && count < 5) {
+        while (current != null) {
             String qn = current.getQualifiedName();
             if (qn != null) {
                 superclasses.add(qn);
             }
             current = current.getSuperClass();
-            count++;
         }
         return superclasses;
     }
@@ -85,7 +84,16 @@ public class IdeaUtils {
                 StringBuilder sb = new StringBuilder();
                 for (int i = 0; i < methods.length; i++) {
                     if (i > 0) sb.append("\n\n");
-                    sb.append(methods[i].getText());
+                    PsiFile psiFile = methods[i].getContainingFile();
+                    if (psiFile != null) {
+                        Document document = PsiDocumentManager.getInstance(project).getDocument(psiFile);
+                        if (document != null) {
+                            int startOffset = methods[i].getTextRange().getStartOffset();
+                            int endOffset = methods[i].getTextRange().getEndOffset();
+                            String text = document.getText().substring(startOffset, endOffset);
+                            sb.append(text);
+                        }
+                    }
                 }
                 return sb.toString();
             } else {
@@ -269,5 +277,276 @@ public class IdeaUtils {
             }
         }
         return implementations;
+    }
+
+    public static Map<String, Object> getClassInfo(Project project, String fqn, boolean fullInheritance) {
+        PsiClass psiClass = JavaPsiFacade.getInstance(project).findClass(fqn, GlobalSearchScope.allScope(project));
+        if (psiClass == null) {
+            return null;
+        }
+        PsiFile psiFile = psiClass.getContainingFile();
+        if (psiFile == null) {
+            return null;
+        }
+        String text = psiFile.getText();
+        int charCount = text.length();
+        int lineCount = text.split("\n").length;
+        String projectName = project.getName();
+        Map<String, Object> info = new HashMap<>();
+        info.put("charCount", charCount);
+        info.put("lineCount", lineCount);
+        info.put("project", projectName);
+
+        // Add inheritance info
+        PsiClass superClass = psiClass.getSuperClass();
+        String superClassName = superClass != null ? superClass.getQualifiedName() : null;
+        info.put("superclass", superClassName);
+
+        PsiClass[] interfaces = psiClass.getInterfaces();
+        List<String> interfaceNames = new ArrayList<>();
+        for (PsiClass intf : interfaces) {
+            String name = intf.getQualifiedName();
+            if (name != null) interfaceNames.add(name);
+        }
+        info.put("interfaces", interfaceNames);
+
+        if (fullInheritance) {
+            List<String> inheritanceTree = getSuperclasses(project, fqn);
+            info.put("inheritanceTree", inheritanceTree);
+        }
+
+        return info;
+    }
+
+    public static List<Map<String, Object>> getClassUsages(Project project, String fqn, boolean projectOnly) {
+        PsiClass psiClass = JavaPsiFacade.getInstance(project).findClass(fqn, GlobalSearchScope.allScope(project));
+        if (psiClass == null) {
+            return new ArrayList<>();
+        }
+        GlobalSearchScope scope = projectOnly ? GlobalSearchScope.projectScope(project) : GlobalSearchScope.allScope(project);
+        Query<PsiReference> query = ReferencesSearch.search(psiClass, scope);
+        List<Map<String, Object>> usages = new ArrayList<>();
+        for (PsiReference ref : query.findAll()) {
+            PsiElement element = ref.getElement();
+            PsiClass containingClass = findContainingClass(element);
+            if (containingClass != null) {
+                String className = containingClass.getQualifiedName();
+                if (className != null) {
+                    Document document = PsiDocumentManager.getInstance(project).getDocument(element.getContainingFile());
+                    if (document != null) {
+                        int line = document.getLineNumber(element.getTextRange().getStartOffset()) + 1;
+                        Map<String, Object> usage = new HashMap<>();
+                        usage.put("class", className);
+                        usage.put("line", line);
+                        usages.add(usage);
+                    }
+                }
+            }
+        }
+        return usages;
+    }
+
+    public static List<Map<String, Object>> getFieldUsages(Project project, String fqn, String fieldName, boolean projectOnly) {
+        PsiClass psiClass = JavaPsiFacade.getInstance(project).findClass(fqn, GlobalSearchScope.allScope(project));
+        if (psiClass == null) {
+            return new ArrayList<>();
+        }
+        PsiField field = psiClass.findFieldByName(fieldName, false);
+        if (field == null) {
+            return new ArrayList<>();
+        }
+        GlobalSearchScope scope = projectOnly ? GlobalSearchScope.projectScope(project) : GlobalSearchScope.allScope(project);
+        Query<PsiReference> query = ReferencesSearch.search(field, scope);
+        List<Map<String, Object>> usages = new ArrayList<>();
+        for (PsiReference ref : query.findAll()) {
+            PsiElement element = ref.getElement();
+            PsiClass containingClass = findContainingClass(element);
+            if (containingClass != null) {
+                String className = containingClass.getQualifiedName();
+                if (className != null) {
+                    Document document = PsiDocumentManager.getInstance(project).getDocument(element.getContainingFile());
+                    if (document != null) {
+                        int line = document.getLineNumber(element.getTextRange().getStartOffset()) + 1;
+                        Map<String, Object> usage = new HashMap<>();
+                        usage.put("class", className);
+                        usage.put("line", line);
+                        usages.add(usage);
+                    }
+                }
+            }
+        }
+        return usages;
+    }
+
+    public static List<String> getClassInheritors(Project project, String fqn) {
+        PsiClass psiClass = JavaPsiFacade.getInstance(project).findClass(fqn, GlobalSearchScope.allScope(project));
+        if (psiClass == null) {
+            return new ArrayList<>();
+        }
+        List<String> inheritors = new ArrayList<>();
+        Query<PsiClass> query = ClassInheritorsSearch.search(psiClass);
+        for (PsiClass inheritor : query.findAll()) {
+            String className = inheritor.getQualifiedName();
+            if (className != null) {
+                inheritors.add(className);
+            }
+        }
+        return inheritors;
+    }
+
+    public static List<String> getClassMethods(Project project, String fqn, String visibility, boolean inside, boolean deep) {
+        PsiClass psiClass = JavaPsiFacade.getInstance(project).findClass(fqn, GlobalSearchScope.allScope(project));
+        if (psiClass == null) {
+            return new ArrayList<>();
+        }
+        List<String> signatures = new ArrayList<>();
+        collectMethods(psiClass, psiClass, signatures, visibility, inside, deep, new ArrayList<>());
+        return signatures;
+    }
+
+    private static void collectMethods(PsiClass psiClass, PsiClass rootClass, List<String> signatures, String visibility, boolean inside, boolean deep, List<String> visited) {
+        if (visited.contains(psiClass.getQualifiedName())) return;
+        visited.add(psiClass.getQualifiedName());
+
+        PsiMethod[] methods = psiClass.getMethods();
+        for (PsiMethod method : methods) {
+            if (shouldIncludeMethod(method, visibility, inside, rootClass)) {
+                String sig = buildMethodSignature(method);
+                if (!signatures.contains(sig)) {
+                    signatures.add(sig);
+                }
+            }
+        }
+
+        if (deep) {
+            // Add superclass methods
+            PsiClass superClass = psiClass.getSuperClass();
+            if (superClass != null) {
+                collectMethods(superClass, rootClass, signatures, visibility, inside, deep, visited);
+            }
+            // Add interface methods
+            for (PsiClass intf : psiClass.getInterfaces()) {
+                collectMethods(intf, rootClass, signatures, visibility, inside, deep, visited);
+            }
+        }
+    }
+
+    private static boolean shouldIncludeMethod(PsiMethod method, String visibility, boolean inside, PsiClass targetClass) {
+        PsiModifierList modifiers = method.getModifierList();
+        boolean isPublic = modifiers.hasModifierProperty(PsiModifier.PUBLIC);
+        boolean isProtected = modifiers.hasModifierProperty(PsiModifier.PROTECTED);
+        boolean isPrivate = modifiers.hasModifierProperty(PsiModifier.PRIVATE);
+        boolean isPackagePrivate = !isPublic && !isProtected && !isPrivate;
+
+        PsiClass containingClass = method.getContainingClass();
+        boolean isFromTargetClass = containingClass != null && containingClass.equals(targetClass);
+
+        switch (visibility.toLowerCase()) {
+            case "public":
+                return isPublic;
+            case "protected":
+                return isPublic || isProtected || (inside && isFromTargetClass && (isProtected || isPrivate));
+            case "private":
+                return inside && isFromTargetClass && isPrivate;
+            case "all":
+                return true;
+            default:
+                return isPublic;
+        }
+    }
+
+    private static String buildMethodSignature(PsiMethod method) {
+        StringBuilder sb = new StringBuilder();
+        PsiModifierList modifiers = method.getModifierList();
+        sb.append(modifiers.getText());
+        if (sb.length() > 0) sb.append(" ");
+        PsiType returnType = method.getReturnType();
+        sb.append(returnType != null ? returnType.getPresentableText() : "void");
+        sb.append(" ");
+        sb.append(method.getName());
+        sb.append("(");
+        PsiParameter[] parameters = method.getParameterList().getParameters();
+        for (int i = 0; i < parameters.length; i++) {
+            if (i > 0) sb.append(", ");
+            PsiType paramType = parameters[i].getType();
+            sb.append(paramType.getPresentableText());
+            sb.append(" ");
+            sb.append(parameters[i].getName());
+        }
+        sb.append(")");
+        return sb.toString();
+    }
+
+    public static List<String> getClassFields(Project project, String fqn, String visibility, boolean inside, boolean deep) {
+        PsiClass psiClass = JavaPsiFacade.getInstance(project).findClass(fqn, GlobalSearchScope.allScope(project));
+        if (psiClass == null) {
+            return new ArrayList<>();
+        }
+        List<String> signatures = new ArrayList<>();
+        collectFields(psiClass, psiClass, signatures, visibility, inside, deep, new ArrayList<>());
+        return signatures;
+    }
+
+    private static void collectFields(PsiClass psiClass, PsiClass rootClass, List<String> signatures, String visibility, boolean inside, boolean deep, List<String> visited) {
+        if (visited.contains(psiClass.getQualifiedName())) return;
+        visited.add(psiClass.getQualifiedName());
+
+        PsiField[] fields = psiClass.getFields();
+        for (PsiField field : fields) {
+            if (shouldIncludeField(field, visibility, inside, rootClass)) {
+                String sig = buildFieldSignature(field);
+                if (!signatures.contains(sig)) {
+                    signatures.add(sig);
+                }
+            }
+        }
+
+        if (deep) {
+            // Add superclass fields
+            PsiClass superClass = psiClass.getSuperClass();
+            if (superClass != null) {
+                collectFields(superClass, rootClass, signatures, visibility, inside, deep, visited);
+            }
+            // Add interface fields (interfaces can have constants)
+            for (PsiClass intf : psiClass.getInterfaces()) {
+                collectFields(intf, rootClass, signatures, visibility, inside, deep, visited);
+            }
+        }
+    }
+
+    private static boolean shouldIncludeField(PsiField field, String visibility, boolean inside, PsiClass targetClass) {
+        PsiModifierList modifiers = field.getModifierList();
+        boolean isPublic = modifiers.hasModifierProperty(PsiModifier.PUBLIC);
+        boolean isProtected = modifiers.hasModifierProperty(PsiModifier.PROTECTED);
+        boolean isPrivate = modifiers.hasModifierProperty(PsiModifier.PRIVATE);
+        boolean isPackagePrivate = !isPublic && !isProtected && !isPrivate;
+
+        PsiClass containingClass = field.getContainingClass();
+        boolean isFromTargetClass = containingClass != null && containingClass.equals(targetClass);
+
+        switch (visibility.toLowerCase()) {
+            case "public":
+                return isPublic;
+            case "protected":
+                return isPublic || isProtected || (inside && isFromTargetClass && (isProtected || isPrivate));
+            case "private":
+                return inside && isFromTargetClass && isPrivate;
+            case "all":
+                return true;
+            default:
+                return isPublic;
+        }
+    }
+
+    private static String buildFieldSignature(PsiField field) {
+        StringBuilder sb = new StringBuilder();
+        PsiModifierList modifiers = field.getModifierList();
+        sb.append(modifiers.getText());
+        if (sb.length() > 0) sb.append(" ");
+        PsiType type = field.getType();
+        sb.append(type.getPresentableText());
+        sb.append(" ");
+        sb.append(field.getName());
+        return sb.toString();
     }
 }

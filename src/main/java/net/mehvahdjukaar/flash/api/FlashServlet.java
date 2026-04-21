@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 @Path("/")
-public class SuperclassServlet {
+public class FlashServlet {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @GET
@@ -40,6 +40,12 @@ public class SuperclassServlet {
             "<li><a href=\"/callers?class=java.lang.String&method=toString\">/callers?class=java.lang.String&method=toString</a> - Get callers of a method</li>" +
             "<li><a href=\"/declaration?class=java.lang.String&method=toString\">/declaration?class=java.lang.String&method=toString</a> - Get declaration of a method</li>" +
             "<li><a href=\"/implementations?class=java.lang.String&method=toString\">/implementations?class=java.lang.String&method=toString</a> - Get implementations of a method</li>" +
+            "<li><a href=\"/class-info?class=java.lang.String\">/class-info?class=java.lang.String</a> - Get information about a class</li>" +
+            "<li><a href=\"/class-usages?class=java.lang.String\">/class-usages?class=java.lang.String</a> - Get usages of a class</li>" +
+            "<li><a href=\"/field-usages?class=java.lang.String&field=value\">/field-usages?class=java.lang.String&field=value</a> - Get usages of a field</li>" +
+            "<li><a href=\"/class-inheritors?class=java.lang.String\">/class-inheritors?class=java.lang.String</a> - Get inheritors of a class</li>" +
+            "<li><a href=\"/class-api?class=java.lang.String\">/class-api?class=java.lang.String</a> - Get method signatures of a class</li>" +
+            "<li><a href=\"/class-fields?class=java.lang.String\">/class-fields?class=java.lang.String</a> - Get field signatures of a class</li>" +
             "</ul>" +
             "<h3>Debug Info</h3>" +
             "<p>Open projects: " + IdeaUtils.getOpenProjectNames() + "</p>" +
@@ -61,8 +67,9 @@ public class SuperclassServlet {
             if (pm == null) {
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("ProjectManager not available").build();
             }
-            projects.addAll(IdeaUtils.read(() -> List.of(pm.getOpenProjects())));
-            FlashPlugin.LOGGER.debug("Checking all projects: " + Arrays.toString(pm.getOpenProjects()));
+            Project[] openProjects = IdeaUtils.read(pm::getOpenProjects);
+            projects.addAll(List.of(openProjects));
+            FlashPlugin.LOGGER.debug("Checking all projects: " + Arrays.toString(openProjects));
         }
         return null;
     }
@@ -99,7 +106,6 @@ public class SuperclassServlet {
         FlashPlugin.LOGGER.debug("No method content found for class: " + fqn + ", method: " + methodName);
         return Response.ok("", MediaType.TEXT_PLAIN).build();
     }
-
     @GET
     @Path("class-content")
     @Produces(MediaType.TEXT_PLAIN)
@@ -169,6 +175,7 @@ public class SuperclassServlet {
         return Response.ok("", MediaType.TEXT_PLAIN).build();
     }
 
+
     @GET
     @Path("containing-method")
     @Produces(MediaType.TEXT_PLAIN)
@@ -202,7 +209,7 @@ public class SuperclassServlet {
             }
         }
         FlashPlugin.LOGGER.debug("No containing method found for class: " + fqn + ", line: " + lineNumber);
-        return Response.ok("", MediaType.TEXT_PLAIN).build();
+        return Response.status(Response.Status.BAD_REQUEST).entity("Line not inside a method").build();
     }
 
     @GET
@@ -275,15 +282,22 @@ public class SuperclassServlet {
     }
 
     @GET
-    @Path("declaration")
+    @Path("class-api")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getDeclaration(@QueryParam("class") String className,
-                                   @QueryParam("method") String methodName,
-                                   @QueryParam("project") String projectName) {
-        FlashPlugin.LOGGER.debug("Declaration endpoint called - class: " + className + ", method: " + methodName + ", project: " + projectName);
-        if (className == null || methodName == null) {
-            return Response.status(Response.Status.BAD_REQUEST).entity("Missing 'class' or 'method' parameter").build();
+    public Response getClassApi(@QueryParam("class") String className,
+                                @QueryParam("project") String projectName,
+                                @QueryParam("visibility") String visibility,
+                                @QueryParam("inside") Boolean inside,
+                                @QueryParam("deep") Boolean deep) {
+        FlashPlugin.LOGGER.debug("Class API endpoint called - class: " + className + ", project: " + projectName + ", visibility: " + visibility + ", inside: " + inside + ", deep: " + deep);
+        if (className == null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Missing 'class' parameter").build();
         }
+
+        // Default values
+        final String vis = visibility == null ? "public" : visibility;
+        final boolean isInside = inside != null && inside;
+        final boolean isDeep = deep != null && deep;
 
         List<Project> projectsToCheck = new ArrayList<>();
         var resp = getProjectsToCheck(projectsToCheck, projectName);
@@ -294,34 +308,36 @@ public class SuperclassServlet {
         if (resp != null) return resp;
 
         String fqn = resolvedFQNs.get(0);
+        List<String> allMethodSignatures = new ArrayList<>();
         for (Project project : projectsToCheck) {
-            Map<String, Object> declaration = IdeaUtils.read(() ->
-                IdeaUtils.getMethodDeclaration(project, fqn, methodName));
-
-            if (declaration != null) {
-                FlashPlugin.LOGGER.debug("Found declaration in project " + project.getName());
-                try {
-                    String json = MAPPER.writeValueAsString(declaration);
-                    return Response.ok(json, MediaType.APPLICATION_JSON).build();
-                } catch (JsonProcessingException e) {
-                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Error serializing response").build();
-                }
-            }
+            List<String> signatures = IdeaUtils.read(() ->
+                IdeaUtils.getClassMethods(project, fqn, vis, isInside, isDeep));
+            allMethodSignatures.addAll(signatures);
         }
-        FlashPlugin.LOGGER.debug("No declaration found for class: " + fqn + ", method: " + methodName);
-        return Response.status(Response.Status.NOT_FOUND).entity("Declaration not found").build();
+        try {
+            String json = MAPPER.writeValueAsString(allMethodSignatures);
+            return Response.ok(json, MediaType.APPLICATION_JSON).build();
+        } catch (JsonProcessingException e) {
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Error serializing response").build();
+        }
     }
 
     @GET
-    @Path("implementations")
+    @Path("class-fields")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getImplementations(@QueryParam("class") String className,
-                                       @QueryParam("method") String methodName,
-                                       @QueryParam("project") String projectName) {
-        FlashPlugin.LOGGER.debug("Implementations endpoint called - class: " + className + ", method: " + methodName + ", project: " + projectName);
-        if (className == null || methodName == null) {
-            return Response.status(Response.Status.BAD_REQUEST).entity("Missing 'class' or 'method' parameter").build();
+    public Response getClassFields(@QueryParam("class") String className,
+                                   @QueryParam("project") String projectName,
+                                   @QueryParam("visibility") String visibility,
+                                   @QueryParam("inside") Boolean inside,
+                                   @QueryParam("deep") Boolean deep) {
+        FlashPlugin.LOGGER.debug("Class fields endpoint called - class: " + className + ", project: " + projectName + ", visibility: " + visibility + ", inside: " + inside + ", deep: " + deep);
+        if (className == null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Missing 'class' parameter").build();
         }
+
+        final String vis = visibility == null ? "public" : visibility;
+        final boolean isInside = inside != null && inside;
+        final boolean isDeep = deep != null && deep;
 
         List<Project> projectsToCheck = new ArrayList<>();
         var resp = getProjectsToCheck(projectsToCheck, projectName);
@@ -332,14 +348,14 @@ public class SuperclassServlet {
         if (resp != null) return resp;
 
         String fqn = resolvedFQNs.get(0);
-        List<Map<String, Object>> allImplementations = new ArrayList<>();
+        List<String> allFieldSignatures = new ArrayList<>();
         for (Project project : projectsToCheck) {
-            List<Map<String, Object>> implementations = IdeaUtils.read(() ->
-                IdeaUtils.getMethodImplementations(project, fqn, methodName));
-            allImplementations.addAll(implementations);
+            List<String> signatures = IdeaUtils.read(() ->
+                IdeaUtils.getClassFields(project, fqn, vis, isInside, isDeep));
+            allFieldSignatures.addAll(signatures);
         }
         try {
-            String json = MAPPER.writeValueAsString(allImplementations);
+            String json = MAPPER.writeValueAsString(allFieldSignatures);
             return Response.ok(json, MediaType.APPLICATION_JSON).build();
         } catch (JsonProcessingException e) {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("Error serializing response").build();
