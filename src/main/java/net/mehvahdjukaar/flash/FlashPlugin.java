@@ -2,12 +2,16 @@ package net.mehvahdjukaar.flash;
 
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupActivity;
 import org.jetbrains.annotations.NotNull;
 
 @Service(Service.Level.APP)
 public final class FlashPlugin implements Disposable, StartupActivity {
+
+    public static final Logger LOGGER = Logger.getInstance(FlashPlugin.class);
+
 
     private static FlashlightHTTPServer currentServer = null;
 
@@ -16,7 +20,7 @@ public final class FlashPlugin implements Disposable, StartupActivity {
             try {
                 currentServer = new FlashlightHTTPServer();
             } catch (Exception e) {
-                e.printStackTrace();
+                LOGGER.error("Error starting Flashlight HTTP server", e);
             }
         }
     }
@@ -28,7 +32,7 @@ public final class FlashPlugin implements Disposable, StartupActivity {
                 currentServer.stop();
                 currentServer = null;
             } catch (Exception e) {
-                e.printStackTrace();
+                LOGGER.error("Error stopping Flashlight HTTP server", e);
             }
         }
     }
