@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import jakarta.annotation.Nullable;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -13,6 +14,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import net.mehvahdjukaar.flash.IdeaUtils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -37,30 +39,38 @@ public class SuperclassServlet {
         return Response.ok(html).build();
     }
 
-    @GET
-    @Path("superclasses")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response getSuperclasses(@QueryParam("class") String className, @QueryParam("project") String projectName) {
-        System.out.println("[DEBUG] Superclasses endpoint called - class: " + className + ", project: " + projectName);
-        if (className == null) {
-            return Response.status(Response.Status.BAD_REQUEST).entity("Missing 'class' parameter").build();
-        }
-        List<Project> projectsToCheck;
+    private @Nullable Response getProjectsToCheck(List<Project> projects, @Nullable String projectName) {
         if (projectName != null) {
             Project project = IdeaUtils.findProjectByName(projectName);
             if (project == null) {
                 System.out.println("[DEBUG] Project not found: " + projectName);
                 return Response.status(Response.Status.BAD_REQUEST).entity("Project not found").build();
             }
-            projectsToCheck = List.of(project);
+            projects.add(project);
         } else {
             ProjectManager pm = ApplicationManager.getApplication().getService(ProjectManager.class);
             if (pm == null) {
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("ProjectManager not available").build();
             }
-            projectsToCheck = List.of(pm.getOpenProjects());
+            projects.addAll(List.of(pm.getOpenProjects()));
             System.out.println("[DEBUG] Checking all projects: " + Arrays.toString(pm.getOpenProjects()));
         }
+        return null;
+    }
+
+    @GET
+    @Path("superclasses")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getSuperclasses(@QueryParam("class") String className,
+                                    @QueryParam("project") String projectName) {
+        System.out.println("[DEBUG] Superclasses endpoint called - class: " + className + ", project: " + projectName);
+        if (className == null) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Missing 'class' parameter").build();
+        }
+
+        List<Project> projectsToCheck = new ArrayList<>();
+        var resp = getProjectsToCheck(projectsToCheck, projectName);
+        if (resp != null) return resp;
 
 
         for (Project project : projectsToCheck) {

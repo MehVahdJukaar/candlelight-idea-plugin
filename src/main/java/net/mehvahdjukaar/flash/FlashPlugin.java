@@ -4,7 +4,6 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.startup.StartupActivity;
-import org.apache.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 
 @Service(Service.Level.APP)
