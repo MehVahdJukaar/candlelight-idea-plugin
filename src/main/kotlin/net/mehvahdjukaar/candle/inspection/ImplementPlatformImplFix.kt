@@ -37,7 +37,7 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
         val expectedSignature = ExpectedImplSignature.fromExpectMethod(method)
 
         for (platform in platforms) {
-            val implClass = candidateClasses.firstOrNull { platform.hasClass(it) }
+            val implClass = candidateClasses.firstOrNull { platform.hasElement(it) }
                 ?: run {
                     val packageName = implClassName.substringBeforeLast('.')
                     val pkg = facade.findPackage(packageName)

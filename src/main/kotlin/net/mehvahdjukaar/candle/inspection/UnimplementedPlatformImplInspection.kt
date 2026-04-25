@@ -32,7 +32,7 @@ class UnimplementedPlatformImplInspection : LocalInspectionTool() {
                 val missingPlatforms = Platform.listAvailable(project).filter { platform ->
 
                     // Find the impl class that belongs to this platform's module
-                    val implClass = candidateClasses.firstOrNull { platform.hasClass(it) }
+                    val implClass = candidateClasses.firstOrNull { platform.hasElement(it) }
 
                     if (implClass == null) {
                         true // class missing entirely

@@ -5,6 +5,7 @@ import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
 import org.jetbrains.annotations.PropertyKey
 import org.jetbrains.kotlin.idea.base.util.module
 
@@ -26,7 +27,7 @@ enum class Platform(
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
     ;
 
-    fun hasClass(clazz: PsiClass): Boolean {
+    fun hasElement(clazz: PsiElement): Boolean {
         return clazz.module?.name?.contains(".${this.id}.", ignoreCase = true) ?: false
     }
 

@@ -1,7 +1,11 @@
 package net.mehvahdjukaar.candle.contributor
+
 import com.intellij.codeInsight.completion.CompletionParameters
 import com.intellij.codeInsight.completion.CompletionProvider
 import com.intellij.codeInsight.completion.CompletionResultSet
+import com.intellij.codeInsight.completion.CompletionSorter
+import com.intellij.codeInsight.completion.PrioritizedLookupElement
+import com.intellij.codeInsight.completion.impl.CompletionSorterImpl
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.module.ModuleUtil
@@ -17,7 +21,10 @@ import net.mehvahdjukaar.candle.util.findAllPlatformVirtualOverridableMethods
 import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.getDefaultReturnValue
 import net.mehvahdjukaar.candle.util.isCommon
-// VirtualOverrideCompletionProvider.kt
+import org.jetbrains.kotlin.idea.completion.ItemPriority
+import org.jetbrains.kotlin.idea.completion.assignPriority
+import org.jetbrains.kotlin.idea.completion.smart.withOptions
+import org.jetbrains.kotlin.idea.core.ItemOptions
 
 class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameters>() {
     override fun addCompletions(
@@ -45,9 +52,12 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
             sig !in existingSignatures
         }
 
+
         for (pvm in filteredMethods) {
             val lookupElement = createLookupElement(pvm, containingClass)
-            result.addElement(lookupElement)
+            // Wrap with a low priority so the item appears at the bottom
+            val lowPriorityElement = PrioritizedLookupElement.withPriority(lookupElement, -100000.0)
+            result.addElement(lowPriorityElement)
         }
     }
 
@@ -63,15 +73,15 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
             .withTailText(tailText, true)
             .withTypeText("$platformName · ${method.containingClass?.name}")
             .bold()
-            .withInsertHandler { context, item ->
-                val editor = context.editor
-                val project = context.project
+            .withInsertHandler { ctx, item ->
+                val editor = ctx.editor
+                val project = ctx.project
                 val document = editor.document
 
                 // The completion engine inserted the method name from startOffset to tailOffset.
                 // Remove it before inserting the full method stub.
-                val startOffset = context.startOffset
-                val tailOffset = context.tailOffset
+                val startOffset = ctx.startOffset
+                val tailOffset = ctx.tailOffset
                 document.deleteString(startOffset, tailOffset)
 
                 val methodText = buildMethodText(pvm)
@@ -85,7 +95,9 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
                 PsiDocumentManager.getInstance(project).commitDocument(document)
                 val psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document)
                 if (psiFile != null) {
-                    val insertedMethod = PsiTreeUtil.findElementOfClassAtOffset(psiFile, bodyStart, PsiMethod::class.java, false)
+                    val insertedMethod = PsiTreeUtil.findElementOfClassAtOffset(
+                        psiFile, bodyStart, PsiMethod::class.java, false
+                    )
                     insertedMethod?.let { CodeStyleManager.getInstance(project).reformat(it) }
                 }
             }

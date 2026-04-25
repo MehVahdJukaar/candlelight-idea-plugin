@@ -4,11 +4,14 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.startup.ProjectActivity;
 import com.intellij.openapi.startup.StartupActivity;
+import kotlin.Unit;
+import kotlin.coroutines.Continuation;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
-@Service(Service.Level.APP)
-public final class FlashPlugin implements Disposable, StartupActivity {
+public final class FlashPlugin implements Disposable, ProjectActivity {
 
     public static final Logger LOGGER = Logger.getInstance(FlashPlugin.class);
 
@@ -38,7 +41,7 @@ public final class FlashPlugin implements Disposable, StartupActivity {
     }
 
     @Override
-    public void runActivity(@NotNull Project project) {
-        project.getService(FlashPlugin.class);
+    public @Nullable Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
+        return null;
     }
 }

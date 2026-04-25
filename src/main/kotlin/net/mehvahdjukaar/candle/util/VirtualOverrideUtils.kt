@@ -1,7 +1,6 @@
-// VirtualOverrideUtils.kt
 package net.mehvahdjukaar.candle.util
 
-import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.psi.CommonClassNames
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
@@ -9,10 +8,10 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiModifier
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.psi.util.CachedValueProvider
-import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.InheritanceUtil
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
+import org.jetbrains.kotlin.idea.base.util.module
+
 // ---------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------
@@ -46,8 +45,10 @@ fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
 /**
  * Returns all platform‑specific overridable methods for this class.
  * A method is included only if it exists in **exactly one** available platform.
+ * Works only for classes inside the “common” module.
  */
 fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMethod> {
+
     val index = getVirtualMethodIndex()
     val availablePlatforms = Platform.listAvailable(project)
     return index.values
@@ -57,65 +58,6 @@ fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMet
         }
         .map { it.first() }
         .toList()
-}
-
-// ---------------------------------------------------------------------
-// Core Index
-// ---------------------------------------------------------------------
-
-/**
- * Returns a cached map of method signature -> list of PlatformVirtualMethod for this class.
- * The list contains entries for every overridable method found in the platform hierarchies.
- */
-private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMethod>> {
-    return CachedValuesManager.getCachedValue(this) {
-        val dependencies = mutableSetOf<PsiElement>(this)
-        val index = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
-        val trackers = mutableListOf<Any>()
-
-        val availablePlatforms = Platform.listAvailable(project)
-
-        val commonSuperTypes = collectAllSuperTypes(this, dependencies)
-            .filter { it.qualifiedName != CommonClassNames.JAVA_LANG_OBJECT && it != this }
-
-        val implicitInterfaces = collectOptionalInterfaces(this)
-
-        val allSuperTypesStrings = commonSuperTypes
-            .mapNotNull { it.qualifiedName }
-            .toMutableList()
-        allSuperTypesStrings += implicitInterfaces
-
-        val platformHierarchyCache = mutableMapOf<PsiClass, Set<PsiClass>>()
-
-        for (platform in availablePlatforms) {
-            val platformModule = platform.findModuleForPlatform(project) ?: continue
-            trackers.add(ModuleRootManager.getInstance(platformModule))
-
-            for (qualifiedName in allSuperTypesStrings) {
-                val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(platformModule, false)
-                val platformSuperType = JavaPsiFacade.getInstance(project)
-                    .findClass(qualifiedName, scope)
-                    ?: continue
-
-                dependencies.add(platformSuperType)
-                val platformHierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
-                    collectAllSuperTypes(platformSuperType, dependencies)
-                }
-
-                for (platformClass in platformHierarchy) {
-                    for (method in platformClass.methods) {
-                        if (!isOverridable(method)) continue
-                        val key = method.signatureKey()
-                        index.getOrPut(key) { mutableListOf() }
-                            .add(PlatformVirtualMethod(method, platform))
-                        dependencies.add(method)
-                    }
-                }
-            }
-        }
-
-        CachedValueProvider.Result(index, *dependencies.toTypedArray(), *trackers.toTypedArray())
-    }
 }
 
 /**
@@ -131,6 +73,72 @@ fun PsiMethod.isValidVirtualOverrideForPlatform(platformId: String): Boolean {
     return methodsForSignature.any { it.platform.id.equals(platformId, ignoreCase = true) }
 }
 
+// ---------------------------------------------------------------------
+// Index building (no caching)
+// ---------------------------------------------------------------------
+
+private fun isCommon(clazz: PsiElement): Boolean {
+    return clazz.module?.name?.contains(".common.", ignoreCase = true) ?: false
+}
+
+/**
+ * Builds a fresh map of method signature -> list of PlatformVirtualMethod for this class.
+ * Walks all available platform module hierarchies and collects overridable methods.
+ * Only computes for classes inside the “common” module.
+ */
+private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMethod>> {
+    if (!isCommon(this)) return emptyMap()
+
+    val dependencies = mutableSetOf<PsiElement>()   // no longer used for caching, but for collection
+    val index = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
+    val project = project
+    val availablePlatforms = Platform.listAvailable(project)
+
+    // Supertypes of the original class (excluding java.lang.Object and the class itself)
+    val commonSuperTypes = collectAllSuperTypes(this, dependencies)
+        .filter { it.qualifiedName != CommonClassNames.JAVA_LANG_OBJECT && it != this }
+
+    // Interfaces added via annotations
+    val implicitInterfaces = collectOptionalInterfaces(this)
+
+    val allSuperTypesStrings = commonSuperTypes
+        .mapNotNull { it.qualifiedName }
+        .toMutableList()
+    allSuperTypesStrings += implicitInterfaces
+
+    // Cache for already collected hierarchies inside this call (simple HashMap, no IDE caching)
+    val platformHierarchyCache = HashMap<PsiClass, Set<PsiClass>>()
+
+    for (platform in availablePlatforms) {
+        val platformModule = platform.findModuleForPlatform(project) ?: continue
+
+        for (qualifiedName in allSuperTypesStrings) {
+            val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(platformModule, false)
+            val platformSuperType = JavaPsiFacade.getInstance(project)
+                .findClass(qualifiedName, scope) ?: continue
+
+            // Expand the hierarchy of that class in the platform module
+            val hierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
+                collectAllSuperTypes(platformSuperType, dependencies)
+            }
+
+            for (platformClass in hierarchy) {
+                for (method in platformClass.methods) {
+                    if (!isOverridable(method)) continue
+                    val key = method.signatureKey()
+                    index.getOrPut(key) { mutableListOf() }
+                        .add(PlatformVirtualMethod(method, platform))
+                }
+            }
+        }
+    }
+
+    return index
+}
+
+// ---------------------------------------------------------------------
+// Overridable check
+// ---------------------------------------------------------------------
 
 private fun isOverridable(method: PsiMethod): Boolean {
     return !(method.isConstructor || method.hasModifierProperty(PsiModifier.STATIC) ||
@@ -159,18 +167,16 @@ private fun collectAllSuperTypes(psiClass: PsiClass, dependencies: MutableSet<Ps
         result.addAll(collectAllSuperTypes(iface, dependencies))
     }
 
-
-
     result.add(psiClass)
     return result
 }
 
 private fun collectOptionalInterfaces(psiClass: PsiClass): List<String> {
-    val allImplicitAnnotations = mutableListOf<String>();
+    val allImplicitAnnotations = mutableListOf<String>()
     for (ann in AnnotationType.OPTIONAL_INTERFACE) {
         val optionalAnnotation = psiClass.getAnnotation(ann)
         if (optionalAnnotation != null) {
-            allImplicitAnnotations.addAll(optionalAnnotation.splitValueStrings("value"));
+            allImplicitAnnotations.addAll(optionalAnnotation.splitValueStrings("value"))
         }
     }
     return allImplicitAnnotations

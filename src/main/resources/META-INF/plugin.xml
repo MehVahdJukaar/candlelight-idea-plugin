@@ -19,46 +19,45 @@
     <extensions defaultExtensionNs="com.intellij">
 
         <!--
-          <postStartupActivity implementation="net.mehvahdjukaar.flash.FlashPlugin"/>
-        -->
+           <postStartupActivity implementation="net.mehvahdjukaar.flash.FlashPlugin"/>
+  -->
+         <codeInsight.lineMarkerProvider language="JAVA"
+                                         implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>
+         <codeInsight.lineMarkerProvider language="JAVA"
+                                         implementationClass="net.mehvahdjukaar.candle.gutter.PlatformMethodLineMarkerProvider"/>
+         <codeInsight.lineMarkerProvider language="JAVA"
+                                         implementationClass="net.mehvahdjukaar.candle.gutter.VirtualOverrideLineMarkerProvider"/>
 
-        <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="net.mehvahdjukaar.candle.gutter.PlatformMethodLineMarkerProvider"/>
-        <codeInsight.lineMarkerProvider language="JAVA"
-                                        implementationClass="net.mehvahdjukaar.candle.gutter.VirtualOverrideLineMarkerProvider"/>
+         <localInspection language="JAVA"
+                          shortName="VirtualOverride"
+                          enabledByDefault="true"
+                          level="ERROR"
+                          implementationClass="net.mehvahdjukaar.candle.inspection.VirtualOverrideInspection"
+                          key="inspection.virtual.override.display.name" bundle="messages.Candle" groupKey="group.key"/>
 
-        <localInspection language="JAVA"
-                         shortName="VirtualOverride"
-                         enabledByDefault="true"
-                         level="ERROR"
-                         implementationClass="net.mehvahdjukaar.candle.inspection.VirtualOverrideInspection"
-                         key="inspection.virtual.override.display.name" bundle="messages.Candle" groupKey="group.key"/>
+         <localInspection language="JAVA"
+                          enabledByDefault="true"
+                          level="WARNING"
+                          implementationClass="net.mehvahdjukaar.candle.inspection.UnimplementedPlatformImplInspection"
+                          key="inspection.unimplemented.platform.impl.display.name" bundle="messages.Candle" groupKey="group.key"/>
 
-        <localInspection language="JAVA"
-                         enabledByDefault="true"
-                         level="WARNING"
-                         implementationClass="net.mehvahdjukaar.candle.inspection.UnimplementedPlatformImplInspection"
-                         key="inspection.unimplemented.platform.impl.display.name" bundle="messages.Candle" groupKey="group.key"/>
+         <localInspection language="JAVA"
+                          shortName="ExpectPlatformBody"
+                          enabledByDefault="true"
+                          level="WARNING"
+                          implementationClass="net.mehvahdjukaar.candle.inspection.ExpectPlatformBodyInspection"
+                          key="inspection.expect.platform.body.display.name" bundle="messages.Candle" groupKey="group.key"/>
 
-        <localInspection language="JAVA"
-                         shortName="ExpectPlatformBody"
-                         enabledByDefault="true"
-                         level="WARNING"
-                         implementationClass="net.mehvahdjukaar.candle.inspection.ExpectPlatformBodyInspection"
-                         key="inspection.expect.platform.body.display.name" bundle="messages.Candle" groupKey="group.key"/>
+         <completion.contributor
+             language="JAVA"
+             implementationClass="net.mehvahdjukaar.candle.contributor.VirtualOverrideCompletionContributor"/>
 
-        <completion.contributor
-            language="JAVA"
-            implementationClass="net.mehvahdjukaar.candle.contributor.VirtualOverrideCompletionContributor"/>
+         <implicitUsageProvider implementation="net.mehvahdjukaar.candle.insight.ExpectPlatformImplicitUsageProvider"/>
+         <implicitUsageProvider
+             implementation="net.mehvahdjukaar.candle.insight.VirtualPlatformOverrideImplicitUsageProvider"/>
+     </extensions>
 
-        <implicitUsageProvider implementation="net.mehvahdjukaar.candle.insight.ExpectPlatformImplicitUsageProvider"/>
-        <implicitUsageProvider
-            implementation="net.mehvahdjukaar.candle.insight.VirtualPlatformOverrideImplicitUsageProvider"/>
-    </extensions>
-
-    <actions>
-        <!-- Add your actions here -->
+     <actions>
+         <!-- Add your actions here -->
     </actions>
 </idea-plugin>
