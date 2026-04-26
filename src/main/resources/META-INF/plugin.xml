@@ -45,7 +45,7 @@
                           shortName="ExpectPlatformBody"
                           enabledByDefault="true"
                           level="WARNING"
-                          implementationClass="net.mehvahdjukaar.candle.inspection.ExpectPlatformBodyInspection"
+                          implementationClass="net.mehvahdjukaar.candle.inspection.PlatformImplBodyInspection"
                           key="inspection.expect.platform.body.display.name" bundle="messages.Candle" groupKey="group.key"/>
 
          <completion.contributor

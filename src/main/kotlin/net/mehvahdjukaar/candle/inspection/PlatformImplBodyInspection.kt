@@ -7,7 +7,7 @@ import com.intellij.psi.*
 import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.hasPlatformImplAnnotation
 
-class ExpectPlatformBodyInspection : LocalInspectionTool() {
+class PlatformImplBodyInspection : LocalInspectionTool() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : JavaElementVisitor() {
             override fun visitMethod(method: PsiMethod) {

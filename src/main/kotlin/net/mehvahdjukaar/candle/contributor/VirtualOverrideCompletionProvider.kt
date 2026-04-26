@@ -3,41 +3,57 @@ package net.mehvahdjukaar.candle.contributor
 import com.intellij.codeInsight.completion.CompletionParameters
 import com.intellij.codeInsight.completion.CompletionProvider
 import com.intellij.codeInsight.completion.CompletionResultSet
-import com.intellij.codeInsight.completion.CompletionSorter
 import com.intellij.codeInsight.completion.PrioritizedLookupElement
-import com.intellij.codeInsight.completion.impl.CompletionSorterImpl
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiCodeBlock
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiReferenceExpression
 import com.intellij.psi.PsiType
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.PlatformVirtualMethod
 import net.mehvahdjukaar.candle.util.findAllPlatformVirtualOverridableMethods
-import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.getDefaultReturnValue
 import net.mehvahdjukaar.candle.util.isCommon
-import org.jetbrains.kotlin.idea.completion.ItemPriority
-import org.jetbrains.kotlin.idea.completion.assignPriority
-import org.jetbrains.kotlin.idea.completion.smart.withOptions
-import org.jetbrains.kotlin.idea.core.ItemOptions
 
 class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameters>() {
+
+
     override fun addCompletions(
         parameters: CompletionParameters,
         context: ProcessingContext,
         result: CompletionResultSet
     ) {
+
         val position = parameters.position
         val psiFile = position.containingFile
         val project = position.project
-
         val module = ModuleUtil.findModuleForPsiElement(psiFile) ?: return
         if (!module.isCommon) return
+
+        // 1. If we are inside a method body → skip
+        val containingMethodBody = PsiTreeUtil.getParentOfType(position, PsiCodeBlock::class.java)
+        if (containingMethodBody != null) {
+            // Also ensure it's not the method's parameter list or throws clause
+            val method = PsiTreeUtil.getParentOfType(position, PsiMethod::class.java)
+            if (method != null && PsiTreeUtil.isAncestor(method.body, position, true)) {
+                return
+            }
+        }
+
+        // 2. If the identifier is part of a dot (reference) expression → skip
+        val reference = PsiTreeUtil.getParentOfType(position, PsiReferenceExpression::class.java)
+        if (reference != null && reference.qualifierExpression != null) {
+            // It's something like "obj.method" – we don't want overrides here
+            return
+        }
+
 
         val containingClass = PsiTreeUtil.getParentOfType(position, PsiClass::class.java) ?: return
 

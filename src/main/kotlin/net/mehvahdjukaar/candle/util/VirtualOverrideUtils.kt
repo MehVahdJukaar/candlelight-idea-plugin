@@ -1,13 +1,12 @@
 package net.mehvahdjukaar.candle.util
 
-import com.intellij.openapi.module.ModuleUtilCore
 import com.intellij.psi.CommonClassNames
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiModifier
-import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
 import com.intellij.psi.util.InheritanceUtil
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 import org.jetbrains.kotlin.idea.base.util.module
@@ -93,6 +92,7 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
     val index = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
     val project = project
     val availablePlatforms = Platform.listAvailable(project)
+    if (availablePlatforms.size == 1) return emptyMap();
 
     // Supertypes of the original class (excluding java.lang.Object and the class itself)
     val commonSuperTypes = collectAllSuperTypes(this, dependencies)
@@ -105,17 +105,16 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
         .mapNotNull { it.qualifiedName }
         .toMutableList()
     allSuperTypesStrings += implicitInterfaces
+    val facade = JavaPsiFacade.getInstance(project)
 
     // Cache for already collected hierarchies inside this call (simple HashMap, no IDE caching)
-    val platformHierarchyCache = HashMap<PsiClass, Set<PsiClass>>()
 
     for (platform in availablePlatforms) {
-        val platformModule = platform.findModuleForPlatform(project) ?: continue
-
+        val platformHierarchyCache = HashMap<PsiClass, Set<PsiClass>>()
+        val platformModule = platform.findModuleForPlatform(project) ?: return emptyMap()
+        val scope = moduleWithDependenciesAndLibrariesScope(platformModule, false);
         for (qualifiedName in allSuperTypesStrings) {
-            val scope = GlobalSearchScope.moduleWithDependenciesAndLibrariesScope(platformModule, false)
-            val platformSuperType = JavaPsiFacade.getInstance(project)
-                .findClass(qualifiedName, scope) ?: continue
+            val platformSuperType = facade.findClass(qualifiedName, scope) ?: continue
 
             // Expand the hierarchy of that class in the platform module
             val hierarchy = platformHierarchyCache.getOrPut(platformSuperType) {

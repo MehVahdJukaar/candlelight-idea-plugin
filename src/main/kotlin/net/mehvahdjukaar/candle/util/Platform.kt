@@ -28,7 +28,8 @@ enum class Platform(
     ;
 
     fun hasElement(clazz: PsiElement): Boolean {
-        return clazz.module?.name?.contains(".${this.id}.", ignoreCase = true) ?: false
+        val module = if (clazz is PsiClass) clazz.scope.module else clazz.module
+        return module?.name?.contains(".${this.id}.", ignoreCase = true) ?: false
     }
 
     fun isIn(project: Project): Boolean =
@@ -67,7 +68,7 @@ enum class Platform(
         return ModuleManager.getInstance(project).modules.find { module ->
             val name: String = module.name.lowercase()
             // Matches: ":fabric", "myproject.fabric.main", "fabric-api", etc.
-             name.contains(".${this.id}.") //name.startsWith("ideaproject") &&
+             name.contains(".${this.id}.main") //name.startsWith("ideaproject") &&
         }
     }
 
