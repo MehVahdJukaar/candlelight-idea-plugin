@@ -23,7 +23,7 @@
   -->
 
 
-        <editorTabTitleProvider implementation="net.mehvahdjukaar.candle.icon.ModuleAwareTabTitleProvider"/>
+        <editorTabTitleProvider implementation="net.mehvahdjukaar.candle.title.ModuleAwareTabTitleProvider"/>
 
 
         <codeInsight.lineMarkerProvider language="JAVA"

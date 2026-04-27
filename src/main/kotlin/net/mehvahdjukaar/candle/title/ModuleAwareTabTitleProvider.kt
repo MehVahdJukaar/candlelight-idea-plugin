@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.candle.icon
+package net.mehvahdjukaar.candle.title
 
 import com.intellij.openapi.fileEditor.impl.EditorTabTitleProvider
 import com.intellij.openapi.module.ModuleUtilCore
