@@ -33,3 +33,8 @@ Tested on Intellij 2025.3
 -  Gutter icons navigate from a virtual override to its platform declaration
 -  Implicit usage marks virtual overrides and their parameters as used
 -  Works with @OptionalInterface annotation too
+
+
+### Platform Prefixes
+- Prefixes [F] or [N] on classes which are from fabric or neoforge module.
+- Only works from classes from your project, doesn't work with dependencies yet.
