@@ -9,6 +9,7 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiModifier
 import com.intellij.psi.PsiSubstitutor
 import com.intellij.psi.PsiType
+import com.intellij.psi.PsiTypes
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
 import com.intellij.psi.util.InheritanceUtil
 import com.intellij.psi.util.PsiSuperMethodUtil
@@ -40,7 +41,11 @@ class PlatformVirtualMethod(
 
             if (!TypeConversionUtil.erasure(thisType).isAssignableFrom(TypeConversionUtil.erasure(otherType))) return false
         }
-        return true
+
+        val thisReturnType = substitutor.substitute(method.returnType ?: PsiTypes.voidType())
+        val otherReturnType = otherMethod.returnType ?: PsiTypes.voidType()
+
+        return TypeConversionUtil.erasure(thisReturnType).isAssignableFrom(TypeConversionUtil.erasure(otherReturnType))
     }
 }
 

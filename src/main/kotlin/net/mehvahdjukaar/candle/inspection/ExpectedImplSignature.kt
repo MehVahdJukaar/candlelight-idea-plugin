@@ -1,6 +1,7 @@
 package net.mehvahdjukaar.candle.inspection
 
 import com.intellij.psi.*
+import com.intellij.psi.util.TypeConversionUtil
 
 data class ExpectedImplSignature(
     val name: String,
@@ -18,12 +19,12 @@ data class ExpectedImplSignature(
         val implParams = implMethod.parameterList.parameters
         if (implParams.size != parameterTypes.size) return false
         val typeMatch = implParams.zip(parameterTypes).all { (param, expectedType) ->
-            param.type.canonicalText == expectedType.canonicalText
+            TypeConversionUtil.erasure(param.type).isAssignableFrom(TypeConversionUtil.erasure(expectedType))
         }
         if (!typeMatch) return false
         // Return type must match
-        val implReturnText = (implMethod.returnType ?: PsiType.VOID).canonicalText
-        return implReturnText == returnType.canonicalText
+        val implReturn = implMethod.returnType ?: PsiTypes.voidType()
+        return TypeConversionUtil.erasure(implReturn).isAssignableFrom(TypeConversionUtil.erasure(returnType))
     }
 
     companion object {
@@ -48,7 +49,7 @@ data class ExpectedImplSignature(
 
             return ExpectedImplSignature(
                 name = method.name,
-                returnType = method.returnType ?: PsiType.VOID,
+                returnType = method.returnType ?: PsiTypes.voidType(),
                 parameterTypes = paramTypes
             )
         }
