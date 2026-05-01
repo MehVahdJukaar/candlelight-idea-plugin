@@ -6,7 +6,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
+import com.intellij.psi.search.GlobalSearchScope
 import org.jetbrains.annotations.PropertyKey
+import org.jetbrains.debugger.Scope
 import org.jetbrains.kotlin.idea.base.util.module
 
 /**
@@ -21,7 +23,7 @@ enum class Platform(
     val identifyingPackage: String,
     val fallbackPlatforms: List<Platform> = emptyList()
 ) {
-    FABRIC("fabric", "platform.fabric", "net.fabricmc.api"),
+    FABRIC("fabric", "platform.fabric", "net.fabricmc"),
     FORGE("forge", "platform.forge", "net.minecraftforge.common"),
     NEOFORGE("neoforge", "platform.neoforge", "net.neoforged.neoforge.common")
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
@@ -45,7 +47,7 @@ enum class Platform(
          * Example: `com.example.Example` -> `com.example.forge.ExampleImpl`
          */
 
-
+//TODO: cache and make faster
         fun getPlatformImplImplementationName(clazz: PsiClass): String {
             val className = clazz.binaryName ?: error("Could not get binary name of $this")
             val parts = className.split('.')
@@ -62,6 +64,11 @@ enum class Platform(
         fun listAvailable(project: Project): List<Platform> {
             return Platform.entries.filter { it.isIn(project) }
         }
+
+        fun matchesPlatImplName(name: String, pkg: String): Boolean {
+        return    name.endsWith("Impl") && Platform.entries.any { pkg.endsWith(".${platSubPackageName()}") }
+
+        }
     }
 
     fun findModuleForPlatform(project: Project): Module? {
@@ -71,5 +78,16 @@ enum class Platform(
              name.contains(".${this.id}.main") //name.startsWith("ideaproject") &&
         }
     }
+
+    /*
+    fun findScopeForPlatform(project: Project): GlobalSearchScope? {
+        var modules = ModuleManager.getInstance(project).modules.find { module ->
+            val name: String = module.name.lowercase()
+            // Matches: ":fabric", "myproject.fabric.main", "fabric-api", etc.
+            name.contains(".${this.id}") //name.startsWith("ideaproject") &&
+        }
+        return GlobalSearchScope.moduleWithDependenciesAndLibrariesScope()
+
+    } */
 
 }

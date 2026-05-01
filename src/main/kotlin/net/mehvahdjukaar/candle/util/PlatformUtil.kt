@@ -3,6 +3,9 @@ package net.mehvahdjukaar.candle.util
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.util.MethodSignature
+import com.intellij.psi.util.MethodSignatureUtil
+import com.intellij.psi.util.TypeConversionUtil
 import net.mehvahdjukaar.candle.inspection.ExpectedImplSignature
 
 fun PsiModifierListOwner.hasAnnotation(type: AnnotationType): Boolean =
@@ -36,7 +39,7 @@ val PsiMethod.commonMethods: Set<PsiMethod>
         val name = clazz.binaryName ?: return emptySet()
         val pkg = name.substringBeforeLast('.')
 
-        val nameMatches = name.endsWith("Impl") && Platform.entries.any { pkg.endsWith(".${Platform.platSubPackageName()}") }
+        val nameMatches = Platform.matchesPlatImplName(name, pkg);
         if (!nameMatches) return emptySet()
 
         val commonPkg = pkg.substringBeforeLast('.')
@@ -143,6 +146,20 @@ fun getDefaultReturnValue(returnType: PsiType?): String {
         else -> "null"
     }
 }
+/**
+ * Generates a signature key based on the erased parameter types.
+ * This ensures that a method using a generic <T> matches an override
+ * using a specific type (e.g., String).
+ */
+fun PsiMethod.signatureKey(substitutor: PsiSubstitutor = PsiSubstitutor.EMPTY): String {
+    return getSignature(substitutor).toStableString()
+}
 
-fun PsiMethod.signatureKey(): String =
-    name + "(" + parameterList.parameters.joinToString(",") { it.type.canonicalText } + ")"
+fun MethodSignature.toStableString(): String {
+    val erasedParameters = parameterTypes.joinToString(",") {
+        TypeConversionUtil.erasure(it).canonicalText
+    }
+    return "$name($erasedParameters)"
+}
+
+

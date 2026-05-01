@@ -3,11 +3,16 @@ package net.mehvahdjukaar.candle.util
 import com.intellij.psi.CommonClassNames
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiClassType
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiModifier
+import com.intellij.psi.PsiSubstitutor
+import com.intellij.psi.PsiType
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
 import com.intellij.psi.util.InheritanceUtil
+import com.intellij.psi.util.PsiSuperMethodUtil
+import com.intellij.psi.util.TypeConversionUtil
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 import org.jetbrains.kotlin.idea.base.util.module
 
@@ -15,10 +20,29 @@ import org.jetbrains.kotlin.idea.base.util.module
 // Public API
 // ---------------------------------------------------------------------
 
-data class PlatformVirtualMethod(
+class PlatformVirtualMethod(
     val method: PsiMethod,
-    val platform: Platform
-)
+    val platform: Platform,
+    val substitutor: PsiSubstitutor = PsiSubstitutor.EMPTY
+) {
+    val name: String get() = method.name
+    val parametersCount: Int get() = method.parameterList.parametersCount
+
+    fun matches(otherMethod: PsiMethod): Boolean {
+        if (otherMethod.name != name) return false
+        val otherParams = otherMethod.parameterList.parameters
+        if (otherParams.size != parametersCount) return false
+
+        val thisParams = method.parameterList.parameters
+        for (i in 0 until parametersCount) {
+            val thisType = substitutor.substitute(thisParams[i].type)
+            val otherType = otherParams[i].type
+
+            if (!TypeConversionUtil.erasure(thisType).isAssignableFrom(TypeConversionUtil.erasure(otherType))) return false
+        }
+        return true
+    }
+}
 
 /**
  * Returns all platform methods that this common method virtually overrides.
@@ -26,16 +50,24 @@ data class PlatformVirtualMethod(
  */
 fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
     val containingClass = containingClass ?: return emptySet()
-    val signature = signatureKey()
     val index = containingClass.getVirtualMethodIndex()
-    val methodsForSignature = index[signature] ?: return emptySet()
+    val methodsForName = index[this.name] ?: return emptySet()
 
-    val platforms = methodsForSignature.map { it.platform }.toSet()
+    val matchingMethods = mutableListOf<PlatformVirtualMethod>()
+    for (platformMap in methodsForName.values) {
+        for (pvm in platformMap) {
+            if (pvm.matches(this)) {
+                matchingMethods.add(pvm)
+            }
+        }
+    }
+
+    val platforms = matchingMethods.map { it.platform }.toSet()
     val availablePlatforms = Platform.listAvailable(project)
 
     // Return methods only if they are platform‑specific
     return if (platforms.isNotEmpty() && platforms.size < availablePlatforms.size) {
-        methodsForSignature.map { it.method }.toSet()
+        matchingMethods.map { it.method }.toSet()
     } else {
         emptySet()
     }
@@ -47,10 +79,21 @@ fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
  * Works only for classes inside the “common” module.
  */
 fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMethod> {
-
     val index = getVirtualMethodIndex()
     val availablePlatforms = Platform.listAvailable(project)
-    return index.values
+
+    // Group platform methods by their "identity" (name + parameters count for now, as a heuristic)
+    val grouped = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
+    for (methodsForName in index.values) {
+        for (platformMap in methodsForName.values) {
+            for (pvm in platformMap) {
+                val key = "${pvm.name}${pvm.parametersCount}"
+                grouped.getOrPut(key) { mutableListOf() }.add(pvm)
+            }
+        }
+    }
+
+    return grouped.values
         .filter { methods ->
             val platforms = methods.map { it.platform }.toSet()
             platforms.size == 1 && platforms.size < availablePlatforms.size
@@ -65,11 +108,12 @@ fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMet
  */
 fun PsiMethod.isValidVirtualOverrideForPlatform(platformId: String): Boolean {
     val containingClass = containingClass ?: return false
-    val signature = signatureKey()
     val index = containingClass.getVirtualMethodIndex()
-    val methodsForSignature = index[signature] ?: return false
+    val methodsForName = index[this.name] ?: return false
 
-    return methodsForSignature.any { it.platform.id.equals(platformId, ignoreCase = true) }
+    return methodsForName.values.flatten().any {
+        it.platform.id.equals(platformId, ignoreCase = true) && it.matches(this)
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -85,14 +129,14 @@ private fun isCommon(clazz: PsiElement): Boolean {
  * Walks all available platform module hierarchies and collects overridable methods.
  * Only computes for classes inside the “common” module.
  */
-private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMethod>> {
+private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
     if (!isCommon(this)) return emptyMap()
 
     val dependencies = mutableSetOf<PsiElement>()   // no longer used for caching, but for collection
-    val index = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
+    val index = mutableMapOf<String, MutableMap<Platform, MutableList<PlatformVirtualMethod>>>()
     val project = project
     val availablePlatforms = Platform.listAvailable(project)
-    if (availablePlatforms.size == 1) return emptyMap();
+    if (availablePlatforms.size <= 1) return emptyMap();
 
     // Supertypes of the original class (excluding java.lang.Object and the class itself)
     val commonSuperTypes = collectAllSuperTypes(this, dependencies)
@@ -111,10 +155,13 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
 
     for (platform in availablePlatforms) {
         val platformHierarchyCache = HashMap<PsiClass, Set<PsiClass>>()
-        val platformModule = platform.findModuleForPlatform(project) ?: return emptyMap()
+        val platformModule = platform.findModuleForPlatform(project) ?: continue
         val scope = moduleWithDependenciesAndLibrariesScope(platformModule, false);
         for (qualifiedName in allSuperTypesStrings) {
             val platformSuperType = facade.findClass(qualifiedName, scope) ?: continue
+
+            val substitutor = TypeConversionUtil.getClassSubstitutor(platformSuperType, this, PsiSubstitutor.EMPTY)
+                ?: PsiSubstitutor.EMPTY
 
             // Expand the hierarchy of that class in the platform module
             val hierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
@@ -124,9 +171,10 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, List<PlatformVirtualMe
             for (platformClass in hierarchy) {
                 for (method in platformClass.methods) {
                     if (!isOverridable(method)) continue
-                    val key = method.signatureKey()
-                    index.getOrPut(key) { mutableListOf() }
-                        .add(PlatformVirtualMethod(method, platform))
+
+                    val methodsForName = index.getOrPut(method.name) { mutableMapOf() }
+                    val platformMethods = methodsForName.getOrPut(platform) { mutableListOf() }
+                    platformMethods.add(PlatformVirtualMethod(method, platform, substitutor))
                 }
             }
         }

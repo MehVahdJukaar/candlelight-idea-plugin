@@ -60,12 +60,11 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
         val platformVirtualMethods = containingClass.findAllPlatformVirtualOverridableMethods()
 
         val existingSignatures = containingClass.methods.map { method ->
-            method.name to method.parameterList.parameters.map { it.type.canonicalText }
+            method.name to method.parameterList.parameters.size
         }.toSet()
 
         val filteredMethods = platformVirtualMethods.filter { pvm ->
-            val sig = pvm.method.name to pvm.method.parameterList.parameters.map { it.type.canonicalText }
-            sig !in existingSignatures
+            (pvm.name to pvm.parametersCount) !in existingSignatures
         }
 
 
