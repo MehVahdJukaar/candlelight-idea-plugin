@@ -12,6 +12,7 @@ import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.pom.Navigatable
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
+import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.Platform
 import net.mehvahdjukaar.candle.util.getDefaultReturnValue
@@ -145,6 +146,13 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
                     append("public static ")
                     if (originalMethod != null) {
                         val returnType = originalMethod.returnType?.presentableText ?: "void"
+                        val returnAnnos = originalMethod.modifierList.annotations
+                            .filter { anno ->
+                                val qName = anno.qualifiedName
+                                qName == null || AnnotationType.PLATFORM_IMPLEMENTATION.none { p -> p == qName }
+                            }
+                            .joinToString(" ") { it.text }
+                        if (returnAnnos.isNotEmpty()) append(returnAnnos).append(" ")
                         append(returnType).append(" ").append(originalMethod.name).append("(")
 
                         val params = mutableListOf<String>()
@@ -154,7 +162,14 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
                             params.add("$typeName instance")
                         }
                         originalMethod.parameterList.parameters.forEach {
-                            params.add("${it.type.presentableText} ${it.name}")
+                            val annos = it.modifierList?.annotations
+                                ?.filter { anno ->
+                                    val qName = anno.qualifiedName
+                                    qName == null || AnnotationType.PLATFORM_IMPLEMENTATION.none { p -> p == qName }
+                                }
+                                ?.joinToString(" ") { a -> a.text } ?: ""
+                            val paramText = if (annos.isNotEmpty()) "$annos ${it.type.presentableText} ${it.name}" else "${it.type.presentableText} ${it.name}"
+                            params.add(paramText)
                         }
                         append(params.joinToString(", "))
                     } else {

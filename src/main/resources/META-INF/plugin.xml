@@ -62,6 +62,7 @@
         <implicitUsageProvider implementation="net.mehvahdjukaar.candle.insight.PlatformImplImplicitUsageProvider"/>
         <implicitUsageProvider
             implementation="net.mehvahdjukaar.candle.insight.VirtualPlatformOverrideImplicitUsageProvider"/>
+        <renamePsiElementProcessor implementation="net.mehvahdjukaar.candle.refactor.PlatformImplRenameProcessor"/>
     </extensions>
 
     <actions>
