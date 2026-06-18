@@ -11,8 +11,11 @@ import com.intellij.psi.PsiSubstitutor
 import com.intellij.psi.PsiType
 import com.intellij.psi.PsiTypes
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
+import com.intellij.psi.util.CachedValueProvider
+import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.InheritanceUtil
 import com.intellij.psi.util.TypeConversionUtil
+import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 
 // ---------------------------------------------------------------------
@@ -124,12 +127,20 @@ fun PsiMethod.isValidVirtualOverrideForPlatform(plat: Platform): Boolean {
 // ---------------------------------------------------------------------
 
 /**
- * Builds a fresh map of method signature -> list of PlatformVirtualMethod for this class.
- * Walks all available platform module hierarchies and collects overridable methods.
- * Only computes for classes inside the “common” module.
+ * Builds a map of method signature -> list of PlatformVirtualMethod for this class.
  */
 private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
     if (!ModuleRoleDetector.isCommonElement(this)) return emptyMap()
+    return if (CandleSettings.getInstance(project).psiCachingEnabled) {
+        CachedValuesManager.getManager(project).getCachedValue(this) {
+            CachedValueProvider.Result.create(buildVirtualMethodIndex(), this)
+        }
+    } else {
+        buildVirtualMethodIndex()
+    }
+}
+
+private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
 
     val dependencies = mutableSetOf<PsiElement>()   // no longer used for caching, but for collection
     val index = mutableMapOf<String, MutableMap<Platform, MutableList<PlatformVirtualMethod>>>()

@@ -3,9 +3,11 @@ package net.mehvahdjukaar.candle.util
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.psi.util.CachedValueProvider
+import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.MethodSignature
-import com.intellij.psi.util.MethodSignatureUtil
 import com.intellij.psi.util.TypeConversionUtil
+import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.inspection.ExpectedImplSignature
 
 fun PsiModifierListOwner.hasAnnotation(type: AnnotationType): Boolean =
@@ -18,7 +20,7 @@ val PsiMethod.hasPlatformImplAnnotation: Boolean
     get() = hasAnnotation(AnnotationType.PLATFORM_IMPLEMENTATION)
 
 val PsiMethod.isVirtualOverrideAnnotation: Boolean
-    get() = hasAnnotation(AnnotationType.VIRTUAL_OVERRIDE);
+    get() = hasAnnotation(AnnotationType.VIRTUAL_OVERRIDE)
 
 /**
  * Finds the first annotation of the [type] on this method.
@@ -28,72 +30,83 @@ fun PsiMethod.findAnnotation(type: AnnotationType): PsiAnnotation? =
         type.any { name -> it.hasQualifiedName(name) }
     }
 
-// TODO: Cache these somehow? Both commonMethods and platformMethods might be really slow and could benefit from caching.
-
 /**
  * The common declarations corresponding to this platform method.
  */
 val PsiMethod.commonMethods: Set<PsiMethod>
-    get() {
-        val clazz = containingClass ?: return emptySet()
-        val name = clazz.binaryName ?: return emptySet()
-        val pkg = name.substringBeforeLast('.')
-
-        val nameMatches = Platform.matchesPlatImplName(name, pkg);
-        if (!nameMatches) return emptySet()
-
-        val commonPkg = pkg.substringBeforeLast('.')
-        val commonClassName = name.substringAfterLast('.').removeSuffix("Impl")
-        val baseClass = "$commonPkg.$commonClassName"
-
-        return JavaPsiFacade.getInstance(project).findPackage(commonPkg)
-            ?.getClasses(getScopeFor(this))
-            ?.asSequence()
-            ?.flatMap { it.asSequenceWithInnerClasses() }
-            ?.filter { it.binaryName?.replace("$", "") == baseClass }
-            ?.flatMap { commonClass ->
-                // Find the common @PlatformImpl method that corresponds to this impl method
-                commonClass.methods.asSequence().filter { commonMethod ->
-                    commonMethod.hasPlatformImplAnnotation &&
-                        ExpectedImplSignature.fromExpectMethod(commonMethod).matchesImplMethod(this)
-                }
-            }
-            ?.toSet()
-            ?: emptySet()
+    get() = if (CandleSettings.getInstance(project).psiCachingEnabled) {
+        CachedValuesManager.getManager(project).getCachedValue(this) {
+            CachedValueProvider.Result.create(computeCommonMethods(), this)
+        }
+    } else {
+        computeCommonMethods()
     }
+
+private fun PsiMethod.computeCommonMethods(): Set<PsiMethod> {
+    val clazz = containingClass ?: return emptySet()
+    val name = clazz.binaryName ?: return emptySet()
+    val pkg = name.substringBeforeLast('.')
+
+    if (!Platform.matchesPlatImplName(name.substringAfterLast('.').replace("$", ""), pkg)) {
+        return emptySet()
+    }
+
+    val commonPkg = pkg.substringBeforeLast('.')
+    val commonClassName = name.substringAfterLast('.').replace("$", "").removeSuffix("Impl")
+    val baseClass = "$commonPkg.$commonClassName"
+
+    return JavaPsiFacade.getInstance(project).findPackage(commonPkg)
+        ?.getClasses(scopeFor(this))
+        ?.asSequence()
+        ?.flatMap { it.asSequenceWithInnerClasses() }
+        ?.filter { it.binaryName?.replace("$", "") == baseClass }
+        ?.flatMap { commonClass ->
+            commonClass.methods.asSequence().filter { commonMethod ->
+                commonMethod.hasPlatformImplAnnotation &&
+                    ExpectedImplSignature.fromExpectMethod(commonMethod).matchesImplMethod(this)
+            }
+        }
+        ?.toSet()
+        ?: emptySet()
+}
 
 /**
  * The platform implementations of this common method.
  */
 val PsiMethod.platformMethodsByPlatform: Map<Platform, Set<PsiMethod>>
-    get() {
-        if (!hasPlatformImplAnnotation) return emptyMap()
-        val clazz = containingClass ?: return emptyMap()
-        val expectedSignature = ExpectedImplSignature.fromExpectMethod(this)
-
-        return Platform.listAvailable(project).associateWith { platform ->
-            val implementationClassName = Platform.getPlatformImplImplementationName(clazz)
-
-            JavaPsiFacade.getInstance(project)
-                .findClasses(implementationClassName, getScopeFor(this))
-                .asSequence()
-                .flatMap { implClass ->
-                    implClass.methods.asSequence().filter { implMethod ->
-                        expectedSignature.matchesImplMethod(implMethod)
-                    }
-                }
-                .toSet()
+    get() = if (CandleSettings.getInstance(project).psiCachingEnabled) {
+        CachedValuesManager.getManager(project).getCachedValue(this) {
+            CachedValueProvider.Result.create(computePlatformMethodsByPlatform(), this)
         }
+    } else {
+        computePlatformMethodsByPlatform()
     }
 
+private fun PsiMethod.computePlatformMethodsByPlatform(): Map<Platform, Set<PsiMethod>> {
+    if (!hasPlatformImplAnnotation) return emptyMap()
+    val clazz = containingClass ?: return emptyMap()
+    val expectedSignature = ExpectedImplSignature.fromExpectMethod(this)
 
+    return Platform.listAvailable(project).associateWith { _ ->
+        val implementationClassName = Platform.getPlatformImplImplementationName(clazz)
+
+        JavaPsiFacade.getInstance(project)
+            .findClasses(implementationClassName, scopeFor(this))
+            .asSequence()
+            .flatMap { implClass ->
+                implClass.methods.asSequence().filter { implMethod ->
+                    expectedSignature.matchesImplMethod(implMethod)
+                }
+            }
+            .toSet()
+    }
+}
 
 /**
  * The platform implementations of this common method.
  */
 val PsiMethod.platformMethods: Set<PsiMethod>
     get() = platformMethodsByPlatform.flatMap { (_, methods) -> methods }.toSet()
-
 
 /**
  * The binary name of this class in dot-dollar format (eg. `a.b.C$D`)
@@ -121,20 +134,17 @@ fun PsiClass.asSequenceWithInnerClasses(): Sequence<PsiClass> =
 fun <V : Any> Map<Platform, V>.getWithPlatformFallback(platform: Platform): V? =
     this[platform] ?: platform.fallbackPlatforms.asSequence().mapNotNull { getWithPlatformFallback(it) }.firstOrNull()
 
-
-
 /**
  * Gets the searching scope for searching for classes related to the [element].
  * If the element's corresponding module is not null (= an element in this project),
  * uses the project scope. Otherwise uses the all scope.
  */
-private fun getScopeFor(element: PsiElement): GlobalSearchScope =
+private fun scopeFor(element: PsiElement): GlobalSearchScope =
     if (ModuleUtil.findModuleForPsiElement(element) != null) {
         GlobalSearchScope.projectScope(element.project)
     } else {
         GlobalSearchScope.allScope(element.project)
     }
-
 
 fun getDefaultReturnValue(returnType: PsiType?): String {
     return when (returnType) {
@@ -146,13 +156,17 @@ fun getDefaultReturnValue(returnType: PsiType?): String {
         else -> "null"
     }
 }
+
 /**
  * Generates a signature key based on the erased parameter types.
  * This ensures that a method using a generic <T> matches an override
  * using a specific type (e.g., String).
  */
 fun PsiMethod.signatureKey(substitutor: PsiSubstitutor = PsiSubstitutor.EMPTY): String {
-    return getSignature(substitutor).toStableString()
+    val params = parameterList.parameters.joinToString(",") { param ->
+        TypeConversionUtil.erasure(substitutor.substitute(param.type)).canonicalText
+    }
+    return "$name($params)"
 }
 
 fun MethodSignature.toStableString(): String {
@@ -161,5 +175,3 @@ fun MethodSignature.toStableString(): String {
     }
     return "$name($erasedParameters)"
 }
-
-

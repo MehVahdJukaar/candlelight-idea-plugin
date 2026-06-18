@@ -6,9 +6,11 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiMethod
 import org.jetbrains.kotlin.idea.base.util.module
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
@@ -87,7 +89,24 @@ object ModuleRoleDetector {
 
     fun isCommonModule(module: Module?): Boolean = detectRole(module) == ModuleRole.COMMON
 
-    fun isCommonElement(element: PsiElement): Boolean = detectRole(element) == ModuleRole.COMMON
+    fun isCommonElement(element: PsiElement): Boolean {
+        when (detectRole(element)) {
+            ModuleRole.COMMON -> return true
+            ModuleRole.FABRIC, ModuleRole.NEOFORGE, ModuleRole.FORGE -> return false
+            ModuleRole.UNKNOWN -> {}
+        }
+        return isStructurallyCommon(element)
+    }
+
+    /** Fallback when Gradle module naming does not expose the common source set. */
+    private fun isStructurallyCommon(element: PsiElement): Boolean {
+        val clazz = when (element) {
+            is PsiMethod -> element.containingClass
+            is PsiClass -> element
+            else -> null
+        } ?: return false
+        return !clazz.isPlatformImplClass() && clazz.methods.any { it.hasPlatformImplAnnotation }
+    }
 
     private val ModuleRole.isPlatformSource: Boolean
         get() = platform != null

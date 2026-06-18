@@ -1,6 +1,7 @@
 package net.mehvahdjukaar.candle.util
 
 import com.intellij.openapi.module.Module
+import com.intellij.openapi.module.ModuleUtil
 import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
@@ -25,8 +26,14 @@ enum class Platform(
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
     ;
 
-    fun hasElement(element: PsiElement): Boolean =
-        ModuleRoleDetector.detectRole(element).platform == this
+    fun hasElement(element: PsiElement): Boolean {
+        ModuleRoleDetector.detectRole(element).platform?.let { return it == this }
+        element.containingFile?.virtualFile?.let { file ->
+            val module = ModuleUtil.findModuleForPsiElement(element)
+            ModuleRoleDetector.detectRoleForFile(file, element.project, module).platform?.let { return it == this }
+        }
+        return false
+    }
 
     fun isIn(project: Project): Boolean =
         JavaPsiFacade.getInstance(project).findPackage(identifyingPackage) != null

@@ -6,6 +6,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiJavaFile
 import com.intellij.psi.PsiManager
+import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.util.ModuleRoleDetector
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
@@ -13,6 +14,7 @@ import org.jetbrains.kotlin.psi.KtFile
 class ModuleAwareTabTitleProvider : EditorTabTitleProvider {
 
     override fun getEditorTabTitle(project: Project, file: VirtualFile): String? {
+        if (!CandleSettings.getInstance(project).tabTitlePrefixesEnabled) return null
         if (!declaresType(project, file)) return null
 
         val module = ModuleUtilCore.findModuleForFile(file, project)

@@ -3,6 +3,8 @@ plugins {
     kotlin("jvm") version "2.3.0"
 }
 
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+
 group = "net.mehvahdjukaar"
 version = "1.4.5"
 
@@ -24,8 +26,11 @@ dependencies {
 
         bundledPlugin("org.jetbrains.kotlin")
         instrumentationTools()
-
+        testFramework(TestFrameworkType.Platform)
+        testFramework(TestFrameworkType.Plugin.Java)
     }
+
+    testImplementation("junit:junit:4.13.2")
 }
 
 intellijPlatform {
@@ -41,6 +46,10 @@ intellijPlatform {
 tasks {
     jar {
         from("COPYING", "COPYING.LESSER")
+    }
+
+    test {
+        useJUnit()
     }
 }
 

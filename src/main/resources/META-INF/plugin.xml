@@ -63,6 +63,15 @@
         <implicitUsageProvider
             implementation="net.mehvahdjukaar.candle.insight.VirtualPlatformOverrideImplicitUsageProvider"/>
         <renamePsiElementProcessor implementation="net.mehvahdjukaar.candle.refactor.PlatformImplRenameProcessor"/>
+
+        <projectConfigurable
+                parentId="language"
+                instance="net.mehvahdjukaar.candle.settings.CandleSettingsConfigurable"
+                id="net.mehvahdjukaar.candle.settings"
+                bundle="messages.Candle"
+                key="settings.display.name"/>
+
+        <usageGroupingRuleProvider implementation="net.mehvahdjukaar.candle.usage.PlatformUsageGroupingRuleProvider"/>
     </extensions>
 
     <actions>
