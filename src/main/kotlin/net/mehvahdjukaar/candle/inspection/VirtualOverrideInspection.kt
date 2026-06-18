@@ -5,6 +5,7 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
 import com.intellij.psi.*
 import net.mehvahdjukaar.candle.util.AnnotationType
+import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.Platform
 import net.mehvahdjukaar.candle.util.isValidVirtualOverrideForPlatform
 
@@ -13,21 +14,19 @@ class VirtualOverrideInspection : LocalInspectionTool() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor {
         return object : JavaElementVisitor() {
             override fun visitMethod(method: PsiMethod) {
-                // Find the @VirtualOverride annotation
                 val annotation = method.annotations.firstOrNull { ann ->
                     AnnotationType.VIRTUAL_OVERRIDE.any { ann.hasQualifiedName(it) }
                 } ?: return
 
-                // Extract platform value
                 val platformValue = annotation.findAttributeValue("value") as? PsiLiteralExpression
                 val platformId = platformValue?.value as? String
 
                 if (platformId.isNullOrEmpty()) {
-                    // Missing platform value – highlight the annotation
                     holder.registerProblem(
                         annotation,
-                        "@VirtualOverride must specify a platform",
-                        ProblemHighlightType.ERROR
+                        CandleBundle["inspection.virtualOverride.missingPlatform"],
+                        ProblemHighlightType.ERROR,
+                        RemoveVirtualOverrideFix()
                     )
                     return
                 }
@@ -36,20 +35,19 @@ class VirtualOverrideInspection : LocalInspectionTool() {
                 if (plat == null) {
                     holder.registerProblem(
                         annotation,
-                        "@VirtualOverride did not specify a valid platform",
-                        ProblemHighlightType.ERROR
+                        CandleBundle["inspection.virtualOverride.invalidPlatform"],
+                        ProblemHighlightType.ERROR,
+                        RemoveVirtualOverrideFix()
                     )
                     return
                 }
 
-
-                // Validate override
                 if (!method.isValidVirtualOverrideForPlatform(plat)) {
-                    // Invalid override – highlight the annotation, not the method
                     holder.registerProblem(
                         annotation,
-                        "Method does not override any method from platform '$plat'",
-                        ProblemHighlightType.ERROR
+                        CandleBundle["inspection.virtualOverride.notOverriding", plat],
+                        ProblemHighlightType.ERROR,
+                        RemoveVirtualOverrideFix()
                     )
                 }
             }
@@ -58,7 +56,7 @@ class VirtualOverrideInspection : LocalInspectionTool() {
 }
 
 class RemoveVirtualOverrideFix : LocalQuickFix {
-    override fun getFamilyName(): String = "Remove @VirtualOverride annotation"
+    override fun getFamilyName(): String = CandleBundle["inspection.virtualOverride.removeFix"]
 
     override fun applyFix(project: Project, descriptor: ProblemDescriptor) {
         val annotation = descriptor.psiElement as? PsiAnnotation ?: return

@@ -12,10 +12,8 @@ import com.intellij.psi.PsiType
 import com.intellij.psi.PsiTypes
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
 import com.intellij.psi.util.InheritanceUtil
-import com.intellij.psi.util.PsiSuperMethodUtil
 import com.intellij.psi.util.TypeConversionUtil
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
-import org.jetbrains.kotlin.idea.base.util.module
 
 // ---------------------------------------------------------------------
 // Public API
@@ -28,6 +26,8 @@ class PlatformVirtualMethod(
 ) {
     val name: String get() = method.name
     val parametersCount: Int get() = method.parameterList.parametersCount
+    val signatureKey: String
+        get() = method.signatureKey(substitutor)
 
     fun matches(otherMethod: PsiMethod): Boolean {
         if (otherMethod.name != name) return false
@@ -92,8 +92,7 @@ fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMet
     for (methodsForName in index.values) {
         for (platformMap in methodsForName.values) {
             for (pvm in platformMap) {
-                val key = "${pvm.name}${pvm.parametersCount}"
-                grouped.getOrPut(key) { mutableListOf() }.add(pvm)
+                grouped.getOrPut(pvm.signatureKey) { mutableListOf() }.add(pvm)
             }
         }
     }
@@ -124,17 +123,13 @@ fun PsiMethod.isValidVirtualOverrideForPlatform(plat: Platform): Boolean {
 // Index building (no caching)
 // ---------------------------------------------------------------------
 
-private fun isCommon(clazz: PsiElement): Boolean {
-    return clazz.module?.name?.contains(".common.", ignoreCase = true) ?: false
-}
-
 /**
  * Builds a fresh map of method signature -> list of PlatformVirtualMethod for this class.
  * Walks all available platform module hierarchies and collects overridable methods.
  * Only computes for classes inside the “common” module.
  */
 private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
-    if (!isCommon(this)) return emptyMap()
+    if (!ModuleRoleDetector.isCommonElement(this)) return emptyMap()
 
     val dependencies = mutableSetOf<PsiElement>()   // no longer used for caching, but for collection
     val index = mutableMapOf<String, MutableMap<Platform, MutableList<PlatformVirtualMethod>>>()
@@ -193,7 +188,7 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<Pla
 
 private fun isOverridable(method: PsiMethod): Boolean {
     return !(method.isConstructor || method.hasModifierProperty(PsiModifier.STATIC) ||
-        method.hasModifierProperty(PsiModifier.FINAL) || method.hasModifierProperty(PsiModifier.PRIVATE))
+        method.hasModifierProperty(PsiModifier.FINAL) ) && method.hasModifierProperty(PsiModifier.PUBLIC)
 }
 
 // ---------------------------------------------------------------------

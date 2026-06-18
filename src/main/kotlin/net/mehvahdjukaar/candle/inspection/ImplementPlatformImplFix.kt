@@ -14,6 +14,7 @@ import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.CandleBundle
+import net.mehvahdjukaar.candle.util.ModuleRoleDetector
 import net.mehvahdjukaar.candle.util.Platform
 import net.mehvahdjukaar.candle.util.getDefaultReturnValue
 import org.jetbrains.jps.model.java.JavaSourceRootType
@@ -100,7 +101,7 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
                         .toList()
 
                     fun handleModule(module: Module, test: Boolean): Boolean {
-                        if (module.name.contains(platform.id, ignoreCase = true) && !module.name.contains("common")) {
+                        if (ModuleRoleDetector.detectRole(module).platform == platform) {
                             val dir = ModuleRootManager.getInstance(module).contentEntries.asSequence()
                                 .flatMap { it.getSourceFolders(if (test) JavaSourceRootType.TEST_SOURCE else JavaSourceRootType.SOURCE) }
                                 .filter { !JavaProjectRootsUtil.isForGeneratedSources(it) }

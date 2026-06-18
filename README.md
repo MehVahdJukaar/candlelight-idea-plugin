@@ -36,5 +36,5 @@ Tested on Intellij 2025.3
 
 
 ### Platform Prefixes
-- Prefixes [F] or [N] on classes which are from fabric or neoforge module.
-- Only works from classes from your project, doesn't work with dependencies yet.
+- Prefixes [F], [N], or [G] on editor tabs for classes from fabric, neoforge, or legacy forge sources.
+- Works for project sources and library dependencies (detected from jar/path names or loader package prefixes like `net.fabricmc`).

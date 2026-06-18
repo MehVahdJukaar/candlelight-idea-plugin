@@ -11,6 +11,7 @@ import com.intellij.psi.PsiMethod
 import com.intellij.psi.search.GlobalSearchScope
 import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.CandleBundle
+import net.mehvahdjukaar.candle.util.ModuleRoleDetector
 import net.mehvahdjukaar.candle.util.Platform
 import net.mehvahdjukaar.candle.util.findAnnotation
 import net.mehvahdjukaar.candle.util.hasPlatformImplAnnotation
@@ -26,7 +27,7 @@ class UnimplementedPlatformImplInspection : LocalInspectionTool() {
                 val project = method.project
                 val availablePlatforms = Platform.listAvailable(project)
 
-                val isNotCommon = availablePlatforms.any { it.hasElement(method) }
+                val isNotCommon = !ModuleRoleDetector.isCommonElement(method)
 
                 if (isNotCommon) {
                     holder.registerProblem(

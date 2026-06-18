@@ -1,13 +1,11 @@
 package net.mehvahdjukaar.candle.util
 
 import com.intellij.openapi.module.Module
-import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import org.jetbrains.annotations.PropertyKey
-import org.jetbrains.kotlin.idea.base.util.module
 
 /**
  * @property id a unique string ID for this platform from [PlatformIds]
@@ -27,10 +25,8 @@ enum class Platform(
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
     ;
 
-    fun hasElement(clazz: PsiElement): Boolean {
-        val module = if (clazz is PsiClass) clazz.scope.module else clazz.module
-        return module?.name?.contains(".${this.id}.", ignoreCase = true) ?: false
-    }
+    fun hasElement(element: PsiElement): Boolean =
+        ModuleRoleDetector.detectRole(element).platform == this
 
     fun isIn(project: Project): Boolean =
         JavaPsiFacade.getInstance(project).findPackage(identifyingPackage) != null
@@ -74,23 +70,6 @@ enum class Platform(
         }
     }
 
-    fun findModuleForPlatform(project: Project): Module? {
-        return ModuleManager.getInstance(project).modules.find { module ->
-            val name: String = module.name.lowercase()
-            // Matches: ":fabric", "myproject.fabric.main", "fabric-api", etc.
-            name.contains(".${this.id}.main") //name.startsWith("ideaproject") &&
-        }
-    }
-
-    /*
-    fun findScopeForPlatform(project: Project): GlobalSearchScope? {
-        var modules = ModuleManager.getInstance(project).modules.find { module ->
-            val name: String = module.name.lowercase()
-            // Matches: ":fabric", "myproject.fabric.main", "fabric-api", etc.
-            name.contains(".${this.id}") //name.startsWith("ideaproject") &&
-        }
-        return GlobalSearchScope.moduleWithDependenciesAndLibrariesScope()
-
-    } */
-
+    fun findModuleForPlatform(project: Project): Module? =
+        ModuleRoleDetector.findModuleForPlatform(project, this)
 }

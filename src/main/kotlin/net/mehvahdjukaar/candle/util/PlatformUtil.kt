@@ -71,7 +71,7 @@ val PsiMethod.platformMethodsByPlatform: Map<Platform, Set<PsiMethod>>
         val clazz = containingClass ?: return emptyMap()
         val expectedSignature = ExpectedImplSignature.fromExpectMethod(this)
 
-        return Platform.entries.associateWith { platform ->
+        return Platform.listAvailable(project).associateWith { platform ->
             val implementationClassName = Platform.getPlatformImplImplementationName(clazz)
 
             JavaPsiFacade.getInstance(project)

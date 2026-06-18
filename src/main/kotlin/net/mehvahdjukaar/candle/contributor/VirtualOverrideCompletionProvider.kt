@@ -21,6 +21,7 @@ import net.mehvahdjukaar.candle.util.PlatformVirtualMethod
 import net.mehvahdjukaar.candle.util.findAllPlatformVirtualOverridableMethods
 import net.mehvahdjukaar.candle.util.getDefaultReturnValue
 import net.mehvahdjukaar.candle.util.isCommon
+import net.mehvahdjukaar.candle.util.signatureKey
 
 class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameters>() {
 
@@ -59,12 +60,10 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
 
         val platformVirtualMethods = containingClass.findAllPlatformVirtualOverridableMethods()
 
-        val existingSignatures = containingClass.methods.map { method ->
-            method.name to method.parameterList.parameters.size
-        }.toSet()
+        val existingSignatures = containingClass.methods.map { it.signatureKey() }.toSet()
 
         val filteredMethods = platformVirtualMethods.filter { pvm ->
-            (pvm.name to pvm.parametersCount) !in existingSignatures
+            pvm.signatureKey !in existingSignatures
         }
 
 
