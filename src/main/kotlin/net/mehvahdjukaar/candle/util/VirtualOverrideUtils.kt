@@ -1,5 +1,6 @@
 package net.mehvahdjukaar.candle.util
 
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.CommonClassNames
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
@@ -128,6 +129,10 @@ fun PsiMethod.isValidVirtualOverrideForPlatform(plat: Platform): Boolean {
  * Builds a map of method signature -> list of PlatformVirtualMethod for this class.
  */
 private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
+    // While the project is still indexing, class resolution is incomplete and the index would be
+    // full of false positives. Producing them makes gutter markers flash on at startup, which
+    // latches the gutter icon-area width too wide. Wait until indexing finished.
+    if (DumbService.isDumb(project)) return emptyMap()
     if (!ModuleRoleDetector.isCommonElement(this)) return emptyMap()
     return buildVirtualMethodIndex()
 }
@@ -164,30 +169,34 @@ private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<P
         val scope = platformModule?.let { moduleWithDependenciesAndLibrariesScope(it, false) }
             ?: GlobalSearchScope.allScope(project)
         for (qualifiedName in allSuperTypesStrings) {
-            val platformSuperType = facade.findClass(qualifiedName, scope) ?: continue
+            // Architectury projects can expose multiple classes with the same FQN in a platform's
+            // scope: the common/vanilla copy AND the loader-patched copy (e.g. NeoForge's
+            // `Block implements IBlockExtension`). `findClass` (singular) would pick only one and
+            // could miss the patched supertype, so walk them all.
+            for (platformSuperType in facade.findClasses(qualifiedName, scope)) {
+                val substitutor = TypeConversionUtil.getClassSubstitutor(platformSuperType, this, PsiSubstitutor.EMPTY)
+                    ?: PsiSubstitutor.EMPTY
 
-            val substitutor = TypeConversionUtil.getClassSubstitutor(platformSuperType, this, PsiSubstitutor.EMPTY)
-                ?: PsiSubstitutor.EMPTY
+                // Expand the hierarchy of that class in the platform module
+                val hierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
+                    collectAllSuperTypes(platformSuperType, dependencies)
+                }
 
-            // Expand the hierarchy of that class in the platform module
-            val hierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
-                collectAllSuperTypes(platformSuperType, dependencies)
-            }
+                for (platformClass in hierarchy) {
+                    // A class whose package belongs to another platform must not be attributed to
+                    // this one — matters only when we fell back to allScope above (a real platform
+                    // module scope already excludes other platforms' classes).
+                    val classPlatform = platformClass.qualifiedName
+                        ?.let { ModuleRoleDetector.detectPlatformFromPackage(it) }
+                    if (classPlatform != null && classPlatform != platform) continue
 
-            for (platformClass in hierarchy) {
-                // A class whose package belongs to another platform must not be attributed to this
-                // one — matters only when we fell back to allScope above (a real platform module
-                // scope already excludes other platforms' classes).
-                val classPlatform = platformClass.qualifiedName
-                    ?.let { ModuleRoleDetector.detectPlatformFromPackage(it) }
-                if (classPlatform != null && classPlatform != platform) continue
+                    for (method in platformClass.methods) {
+                        if (!isOverridable(method)) continue
 
-                for (method in platformClass.methods) {
-                    if (!isOverridable(method)) continue
-
-                    val methodsForName = index.getOrPut(method.name) { mutableMapOf() }
-                    val platformMethods = methodsForName.getOrPut(platform) { mutableListOf() }
-                    platformMethods.add(PlatformVirtualMethod(method, platform, substitutor))
+                        val methodsForName = index.getOrPut(method.name) { mutableMapOf() }
+                        val platformMethods = methodsForName.getOrPut(platform) { mutableListOf() }
+                        platformMethods.add(PlatformVirtualMethod(method, platform, substitutor))
+                    }
                 }
             }
         }
