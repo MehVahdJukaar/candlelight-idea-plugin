@@ -18,11 +18,12 @@ enum class Platform(
     val id: String,
     @param:PropertyKey(resourceBundle = BUNDLE) private val translationKey: String,
     val identifyingPackage: String,
-    val fallbackPlatforms: List<Platform> = emptyList()
+    val fallbackPlatforms: List<Platform> = emptyList(),
+    private val markerPackages: List<String> = listOf(identifyingPackage),
 ) {
-    FABRIC("fabric", "platform.fabric", "net.fabricmc"),
-    FORGE("forge", "platform.forge", "net.minecraftforge.common"),
-    NEOFORGE("neoforge", "platform.neoforge", "net.neoforged.neoforge.common")
+    FABRIC("fabric", "platform.fabric", "net.fabricmc", markerPackages = listOf("net.fabricmc", "net.fabricmc.loader")),
+    FORGE("forge", "platform.forge", "net.minecraftforge.common", markerPackages = listOf("net.minecraftforge.common", "net.minecraftforge")),
+    NEOFORGE("neoforge", "platform.neoforge", "net.neoforged.neoforge.common", markerPackages = listOf("net.neoforged.neoforge.common", "net.neoforged.neoforge"))
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
     ;
 
@@ -32,11 +33,17 @@ enum class Platform(
             val module = ModuleUtil.findModuleForPsiElement(element)
             ModuleRoleDetector.detectRoleForFile(file, element.project, module).platform?.let { return it == this }
         }
+        if (element is PsiClass && element.isPlatformImplClass()) {
+            val available = listAvailable(element.project)
+            if (available.size == 1 && available.single() == this) return true
+        }
         return false
     }
 
-    fun isIn(project: Project): Boolean =
-        JavaPsiFacade.getInstance(project).findPackage(identifyingPackage) != null
+    fun isIn(project: Project): Boolean {
+        val facade = JavaPsiFacade.getInstance(project)
+        return markerPackages.any { facade.findPackage(it) != null }
+    }
 
     override fun toString() = CandleBundle[translationKey]
 

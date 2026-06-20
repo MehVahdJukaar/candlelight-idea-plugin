@@ -19,12 +19,17 @@ data class ExpectedImplSignature(
         val implParams = implMethod.parameterList.parameters
         if (implParams.size != parameterTypes.size) return false
         val typeMatch = implParams.zip(parameterTypes).all { (param, expectedType) ->
-            TypeConversionUtil.erasure(param.type).isAssignableFrom(TypeConversionUtil.erasure(expectedType))
+            erasedTypesEqual(expectedType, param.type)
         }
         if (!typeMatch) return false
-        // Return type must match
         val implReturn = implMethod.returnType ?: PsiTypes.voidType()
-        return TypeConversionUtil.erasure(implReturn).isAssignableFrom(TypeConversionUtil.erasure(returnType))
+        return erasedTypesEqual(returnType, implReturn)
+    }
+
+    private fun erasedTypesEqual(expected: PsiType, actual: PsiType): Boolean {
+        val expectedErased = TypeConversionUtil.erasure(expected) ?: return false
+        val actualErased = TypeConversionUtil.erasure(actual) ?: return false
+        return expectedErased.canonicalText == actualErased.canonicalText
     }
 
     companion object {

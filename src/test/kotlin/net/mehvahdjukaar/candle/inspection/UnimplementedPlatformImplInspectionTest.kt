@@ -20,11 +20,14 @@ class UnimplementedPlatformImplInspectionTest : CandleLightFixtureTestCase() {
             """.trimIndent()
         )
 
+        openExampleEditor()
         myFixture.enableInspections(UnimplementedPlatformImplInspection::class.java)
         val warnings = myFixture.doHighlighting()
 
         assertTrue(
-            warnings.any { it.description.contains("no implementation", ignoreCase = true) }
+            warnings.any { highlight ->
+                highlight.description?.contains("no implementation", ignoreCase = true) == true
+            }
         )
     }
 
@@ -32,11 +35,14 @@ class UnimplementedPlatformImplInspectionTest : CandleLightFixtureTestCase() {
         addFabricPlatformMarker()
         addCommonPlatformImplClass("")
 
+        openExampleEditor()
         myFixture.enableInspections(UnimplementedPlatformImplInspection::class.java)
         val warnings = myFixture.doHighlighting()
 
         assertTrue(
-            warnings.none { it.description.contains("no implementation", ignoreCase = true) }
+            warnings.none { highlight ->
+                highlight.description?.contains("no implementation", ignoreCase = true) == true
+            }
         )
     }
 }

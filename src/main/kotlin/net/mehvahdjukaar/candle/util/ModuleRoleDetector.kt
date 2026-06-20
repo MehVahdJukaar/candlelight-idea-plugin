@@ -33,6 +33,16 @@ enum class ModuleRole(val platform: Platform?) {
             else -> null
         }
 
+    /** Includes [C] for common — used in navigation popups and project view. */
+    val navigationPrefix: String?
+        get() = when (this) {
+            COMMON -> "[C]"
+            FABRIC -> "[F]"
+            NEOFORGE -> "[N]"
+            FORGE -> "[G]"
+            else -> null
+        }
+
     companion object {
         fun fromPlatform(platform: Platform): ModuleRole = when (platform) {
             Platform.FABRIC -> FABRIC
@@ -84,8 +94,13 @@ object ModuleRoleDetector {
         return ModuleRole.UNKNOWN
     }
 
+    fun findModulesForPlatform(project: Project, platform: Platform): List<Module> =
+        ModuleManager.getInstance(project).modules.filter { detectRole(it).platform == platform }
+
     fun findModuleForPlatform(project: Project, platform: Platform): Module? =
-        ModuleManager.getInstance(project).modules.firstOrNull { detectRole(it).platform == platform }
+        findModulesForPlatform(project, platform)
+            .firstOrNull { !it.name.contains(".test", ignoreCase = true) }
+            ?: findModulesForPlatform(project, platform).firstOrNull()
 
     fun isCommonModule(module: Module?): Boolean = detectRole(module) == ModuleRole.COMMON
 

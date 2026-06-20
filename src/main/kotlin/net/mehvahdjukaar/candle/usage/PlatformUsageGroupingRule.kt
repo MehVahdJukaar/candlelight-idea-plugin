@@ -1,85 +1,77 @@
 package net.mehvahdjukaar.candle.usage
 
 import com.intellij.openapi.project.Project
+import com.intellij.ui.SimpleTextAttributes
 import com.intellij.usages.Usage
 import com.intellij.usages.UsageGroup
-import com.intellij.usages.UsageInfo2
-import com.intellij.usages.impl.rules.SingleParentUsageGroupingRule
+import com.intellij.usages.UsageTarget
+import com.intellij.usages.impl.rules.UsageGroupingRulesDefaultRanks
+import com.intellij.usages.rules.PsiElementUsage
+import com.intellij.usages.rules.SingleParentUsageGroupingRule
 import com.intellij.usages.rules.UsageGroupingRule
-import com.intellij.usages.rules.UsageGroupingRuleEx
+import com.intellij.usages.rules.UsageGroupingRuleProvider
+import com.intellij.usages.rules.UsageInModule
 import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.ModuleRole
 import net.mehvahdjukaar.candle.util.ModuleRoleDetector
 
-class PlatformUsageGroupingRule(private val project: Project) : SingleParentUsageGroupingRule() {
+class PlatformUsageGroupingRule : SingleParentUsageGroupingRule() {
 
-    override fun getParentGroupFor(usage: Usage, usages: Array<out Usage>): UsageGroup {
-        val role = detectRole(usage)
-        return PlatformUsageGroup(role)
+    override fun getParentGroupFor(usage: Usage, usageTargets: Array<out UsageTarget>): UsageGroup? {
+        return PlatformUsageGroup(detectRole(usage))
     }
 
+    override fun getRank(): Int = UsageGroupingRulesDefaultRanks.AFTER_FILE_STRUCTURE.absoluteRank
+
     private fun detectRole(usage: Usage): ModuleRole {
-        val element = usage.navigationElement
-        if (element != null) {
-            return ModuleRoleDetector.detectRole(element)
+        if (usage is PsiElementUsage) {
+            usage.element?.let { return ModuleRoleDetector.detectRole(it) }
         }
-        if (usage is UsageInfo2) {
-            val psi = usage.element
-            if (psi != null) {
-                return ModuleRoleDetector.detectRole(psi)
+        if (usage is UsageInModule) {
+            usage.module?.let { module ->
+                ModuleRoleDetector.detectRole(module)
+                    .takeIf { it != ModuleRole.UNKNOWN }
+                    ?.let { return it }
             }
         }
         return ModuleRole.UNKNOWN
     }
 
-    override fun getRank(): UsageGroupingRule.Rank = UsageGroupingRule.Rank.POST_FILE_STRUCTURE
-
     private class PlatformUsageGroup(private val role: ModuleRole) : UsageGroup {
-        override fun getPresentableGroupText(): String = role.usageGroupLabel
+        override fun getPresentableGroupText(): String = role.toUsageGroupLabel()
 
-        override fun getIcon(): javax.swing.Icon? = null
+        override fun getTextAttributes(isSelected: Boolean): SimpleTextAttributes =
+            if (isSelected) SimpleTextAttributes.GRAY_ATTRIBUTES else SimpleTextAttributes.GRAYED_ATTRIBUTES
 
-        override fun isValid(): Boolean = true
-
-        override fun update(): Unit = Unit
-
-        override fun navigate(focus: Boolean): Boolean = false
-
-        override fun canNavigate(): Boolean = false
-
-        override fun canNavigateToFocus(): Boolean = false
-
-        override fun compareTo(other: UsageGroup?): Int {
+        override fun compareTo(other: UsageGroup): Int {
             if (other !is PlatformUsageGroup) return 0
-            return role.sortOrder.compareTo(other.role.sortOrder)
+            return role.toSortOrder().compareTo(other.role.toSortOrder())
         }
     }
-
-    private val ModuleRole.usageGroupLabel: String
-        get() = when (this) {
-            ModuleRole.COMMON -> CandleBundle["settings.usageGroup.common"]
-            ModuleRole.FABRIC -> CandleBundle["settings.usageGroup.fabric"]
-            ModuleRole.NEOFORGE -> CandleBundle["settings.usageGroup.neoforge"]
-            ModuleRole.FORGE -> CandleBundle["settings.usageGroup.forge"]
-            ModuleRole.UNKNOWN -> CandleBundle["settings.usageGroup.unknown"]
-        }
-
-    private val ModuleRole.sortOrder: Int
-        get() = when (this) {
-            ModuleRole.COMMON -> 0
-            ModuleRole.FABRIC -> 1
-            ModuleRole.NEOFORGE -> 2
-            ModuleRole.FORGE -> 3
-            ModuleRole.UNKNOWN -> 4
-        }
 }
 
-class PlatformUsageGroupingRuleProvider : UsageGroupingRuleEx {
+private fun ModuleRole.toUsageGroupLabel(): String = when (this) {
+    ModuleRole.COMMON -> CandleBundle["settings.usageGroup.common"]
+    ModuleRole.FABRIC -> CandleBundle["settings.usageGroup.fabric"]
+    ModuleRole.NEOFORGE -> CandleBundle["settings.usageGroup.neoforge"]
+    ModuleRole.FORGE -> CandleBundle["settings.usageGroup.forge"]
+    ModuleRole.UNKNOWN -> CandleBundle["settings.usageGroup.unknown"]
+}
+
+private fun ModuleRole.toSortOrder(): Int = when (this) {
+    ModuleRole.COMMON -> 0
+    ModuleRole.FABRIC -> 1
+    ModuleRole.NEOFORGE -> 2
+    ModuleRole.FORGE -> 3
+    ModuleRole.UNKNOWN -> 4
+}
+
+class PlatformUsageGroupingRuleProvider : UsageGroupingRuleProvider {
     override fun getActiveRules(project: Project): Array<UsageGroupingRule> {
         if (!CandleSettings.getInstance(project).groupFindUsagesByPlatform) {
             return UsageGroupingRule.EMPTY_ARRAY
         }
-        return arrayOf(PlatformUsageGroupingRule(project))
+        return arrayOf(PlatformUsageGroupingRule())
     }
 }

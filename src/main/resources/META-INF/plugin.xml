@@ -72,6 +72,11 @@
                 key="settings.display.name"/>
 
         <usageGroupingRuleProvider implementation="net.mehvahdjukaar.candle.usage.PlatformUsageGroupingRuleProvider"/>
+
+        <gotoTargetPresentationProvider order="first"
+                                        implementation="net.mehvahdjukaar.candle.presentation.PlatformGotoTargetPresentationProvider"/>
+
+        <projectViewNodeDecorator implementation="net.mehvahdjukaar.candle.presentation.PlatformProjectViewNodeDecorator"/>
     </extensions>
 
     <actions>

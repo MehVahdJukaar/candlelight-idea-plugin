@@ -10,10 +10,13 @@ import com.intellij.psi.PsiModifier
 import com.intellij.psi.PsiSubstitutor
 import com.intellij.psi.PsiType
 import com.intellij.psi.PsiTypes
+import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
+import com.intellij.openapi.roots.ProjectRootManager
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.InheritanceUtil
+import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.psi.util.TypeConversionUtil
 import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
@@ -133,7 +136,13 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<Pla
     if (!ModuleRoleDetector.isCommonElement(this)) return emptyMap()
     return if (CandleSettings.getInstance(project).psiCachingEnabled) {
         CachedValuesManager.getManager(project).getCachedValue(this) {
-            CachedValueProvider.Result.create(buildVirtualMethodIndex(), this)
+            // Invalidate on any PSI change or project-root/module change. Depending only on `this`
+            // would freeze an empty result computed while the project was still indexing.
+            CachedValueProvider.Result.create(
+                buildVirtualMethodIndex(),
+                PsiModificationTracker.getInstance(project),
+                ProjectRootManager.getInstance(project),
+            )
         }
     } else {
         buildVirtualMethodIndex()
@@ -165,8 +174,12 @@ private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<P
 
     for (platform in availablePlatforms) {
         val platformHierarchyCache = HashMap<PsiClass, Set<PsiClass>>()
-        val platformModule = platform.findModuleForPlatform(project) ?: continue
-        val scope = moduleWithDependenciesAndLibrariesScope(platformModule, false);
+        // Resolve in the platform module's scope so that, e.g., NeoForge's Block (which implements
+        // IBlockExtension) is the one we walk. When the module can't be resolved fall back to the
+        // whole project rather than bailing out, so detection still works in unusual layouts.
+        val platformModule = platform.findModuleForPlatform(project)
+        val scope = platformModule?.let { moduleWithDependenciesAndLibrariesScope(it, false) }
+            ?: GlobalSearchScope.allScope(project)
         for (qualifiedName in allSuperTypesStrings) {
             val platformSuperType = facade.findClass(qualifiedName, scope) ?: continue
 
@@ -179,6 +192,13 @@ private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<P
             }
 
             for (platformClass in hierarchy) {
+                // A class whose package belongs to another platform must not be attributed to this
+                // one — matters only when we fell back to allScope above (a real platform module
+                // scope already excludes other platforms' classes).
+                val classPlatform = platformClass.qualifiedName
+                    ?.let { ModuleRoleDetector.detectPlatformFromPackage(it) }
+                if (classPlatform != null && classPlatform != platform) continue
+
                 for (method in platformClass.methods) {
                     if (!isOverridable(method)) continue
 
@@ -199,7 +219,7 @@ private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<P
 
 private fun isOverridable(method: PsiMethod): Boolean {
     return !(method.isConstructor || method.hasModifierProperty(PsiModifier.STATIC) ||
-        method.hasModifierProperty(PsiModifier.FINAL) ) && method.hasModifierProperty(PsiModifier.PUBLIC)
+        method.hasModifierProperty(PsiModifier.FINAL) || method.hasModifierProperty(PsiModifier.PRIVATE))
 }
 
 // ---------------------------------------------------------------------

@@ -1,12 +1,11 @@
 package net.mehvahdjukaar.candle.refactor
 
 import net.mehvahdjukaar.candle.CandleLightFixtureTestCase
-import net.mehvahdjukaar.candle.util.commonMethods
-import net.mehvahdjukaar.candle.util.platformMethods
 
 class PlatformImplRenameProcessorTest : CandleLightFixtureTestCase() {
 
     fun testRenameCommonMethodSyncsPlatformImplementation() {
+        addFabricPlatformMarker()
         addCommonPlatformImplClass("")
 
         val commonMethod = myFixture.findClass("com.example.Example").findMethodsByName("doWork", false).single()

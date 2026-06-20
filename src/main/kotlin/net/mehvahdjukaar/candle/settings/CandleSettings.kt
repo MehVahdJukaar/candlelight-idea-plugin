@@ -7,6 +7,7 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.project.Project
 import com.intellij.util.xmlb.XmlSerializerUtil
+import net.mehvahdjukaar.candle.util.ModuleRole
 
 @Service(Service.Level.PROJECT)
 @State(name = "CandleSettings", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
@@ -16,6 +17,12 @@ class CandleSettings : PersistentStateComponent<CandleSettings.State> {
         var psiCachingEnabled: Boolean = true,
         var tabTitlePrefixesEnabled: Boolean = true,
         var groupFindUsagesByPlatform: Boolean = true,
+        var navigationPlatformPrefixesEnabled: Boolean = true,
+        var projectViewPlatformPrefixesEnabled: Boolean = false,
+        var showCommonPrefix: Boolean = false,
+        var showFabricPrefix: Boolean = true,
+        var showNeoForgePrefix: Boolean = true,
+        var showForgePrefix: Boolean = true,
     )
 
     private var state = State()
@@ -37,6 +44,50 @@ class CandleSettings : PersistentStateComponent<CandleSettings.State> {
         set(value) {
             state.groupFindUsagesByPlatform = value
         }
+
+    var navigationPlatformPrefixesEnabled: Boolean
+        get() = state.navigationPlatformPrefixesEnabled
+        set(value) {
+            state.navigationPlatformPrefixesEnabled = value
+        }
+
+    var projectViewPlatformPrefixesEnabled: Boolean
+        get() = state.projectViewPlatformPrefixesEnabled
+        set(value) {
+            state.projectViewPlatformPrefixesEnabled = value
+        }
+
+    var showCommonPrefix: Boolean
+        get() = state.showCommonPrefix
+        set(value) {
+            state.showCommonPrefix = value
+        }
+
+    var showFabricPrefix: Boolean
+        get() = state.showFabricPrefix
+        set(value) {
+            state.showFabricPrefix = value
+        }
+
+    var showNeoForgePrefix: Boolean
+        get() = state.showNeoForgePrefix
+        set(value) {
+            state.showNeoForgePrefix = value
+        }
+
+    var showForgePrefix: Boolean
+        get() = state.showForgePrefix
+        set(value) {
+            state.showForgePrefix = value
+        }
+
+    fun isPrefixEnabled(role: ModuleRole): Boolean = when (role) {
+        ModuleRole.COMMON -> showCommonPrefix
+        ModuleRole.FABRIC -> showFabricPrefix
+        ModuleRole.NEOFORGE -> showNeoForgePrefix
+        ModuleRole.FORGE -> showForgePrefix
+        ModuleRole.UNKNOWN -> false
+    }
 
     override fun getState(): State = state
 

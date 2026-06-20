@@ -1,12 +1,12 @@
+import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+
 plugins {
     id("org.jetbrains.intellij.platform") version "2.3.0"
     kotlin("jvm") version "2.3.0"
 }
 
-import org.jetbrains.intellij.platform.gradle.TestFrameworkType
-
 group = "net.mehvahdjukaar"
-version = "1.4.5"
+version = "1.5.3"
 
 repositories {
     mavenCentral()
