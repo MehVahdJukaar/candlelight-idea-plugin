@@ -1,6 +1,7 @@
 package net.mehvahdjukaar.candle.util
 
 import com.intellij.openapi.module.Module
+import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.openapi.project.Project
 import com.intellij.psi.JavaPsiFacade
@@ -19,11 +20,10 @@ enum class Platform(
     @param:PropertyKey(resourceBundle = BUNDLE) private val translationKey: String,
     val identifyingPackage: String,
     val fallbackPlatforms: List<Platform> = emptyList(),
-    private val markerPackages: List<String> = listOf(identifyingPackage),
 ) {
-    FABRIC("fabric", "platform.fabric", "net.fabricmc", markerPackages = listOf("net.fabricmc", "net.fabricmc.loader")),
-    FORGE("forge", "platform.forge", "net.minecraftforge.common", markerPackages = listOf("net.minecraftforge.common", "net.minecraftforge")),
-    NEOFORGE("neoforge", "platform.neoforge", "net.neoforged.neoforge.common", markerPackages = listOf("net.neoforged.neoforge.common", "net.neoforged.neoforge"))
+    FABRIC("fabric", "platform.fabric", "net.fabricmc"),
+    FORGE("forge", "platform.forge", "net.minecraftforge.common"),
+    NEOFORGE("neoforge", "platform.neoforge", "net.neoforged.neoforge.common")
     // QUILT(PlatformIds.QUILT, "platform.quilt", "org.quiltmc", listOf(FABRIC)),
     ;
 
@@ -40,10 +40,8 @@ enum class Platform(
         return false
     }
 
-    fun isIn(project: Project): Boolean {
-        val facade = JavaPsiFacade.getInstance(project)
-        return markerPackages.any { facade.findPackage(it) != null }
-    }
+    fun isIn(project: Project): Boolean =
+        JavaPsiFacade.getInstance(project).findPackage(identifyingPackage) != null
 
     override fun toString() = CandleBundle[translationKey]
 
@@ -84,6 +82,11 @@ enum class Platform(
         }
     }
 
-    fun findModuleForPlatform(project: Project): Module? =
-        ModuleRoleDetector.findModuleForPlatform(project, this)
+    fun findModuleForPlatform(project: Project): Module? {
+        return ModuleManager.getInstance(project).modules.find { module ->
+            val name: String = module.name.lowercase()
+            // Matches: "myproject.fabric.main", etc. ".neoforge.main" does not match ".forge.main".
+            name.contains(".${this.id}.main")
+        }
+    }
 }

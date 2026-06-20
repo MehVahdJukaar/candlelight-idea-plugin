@@ -12,13 +12,8 @@ import com.intellij.psi.PsiType
 import com.intellij.psi.PsiTypes
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
-import com.intellij.openapi.roots.ProjectRootManager
-import com.intellij.psi.util.CachedValueProvider
-import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.InheritanceUtil
-import com.intellij.psi.util.PsiModificationTracker
 import com.intellij.psi.util.TypeConversionUtil
-import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
 
 // ---------------------------------------------------------------------
@@ -134,19 +129,7 @@ fun PsiMethod.isValidVirtualOverrideForPlatform(plat: Platform): Boolean {
  */
 private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
     if (!ModuleRoleDetector.isCommonElement(this)) return emptyMap()
-    return if (CandleSettings.getInstance(project).psiCachingEnabled) {
-        CachedValuesManager.getManager(project).getCachedValue(this) {
-            // Invalidate on any PSI change or project-root/module change. Depending only on `this`
-            // would freeze an empty result computed while the project was still indexing.
-            CachedValueProvider.Result.create(
-                buildVirtualMethodIndex(),
-                PsiModificationTracker.getInstance(project),
-                ProjectRootManager.getInstance(project),
-            )
-        }
-    } else {
-        buildVirtualMethodIndex()
-    }
+    return buildVirtualMethodIndex()
 }
 
 private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
