@@ -1,6 +1,7 @@
 package net.mehvahdjukaar.candle.util
 
 import com.intellij.openapi.module.ModuleUtil
+import com.intellij.openapi.project.DumbService
 import com.intellij.psi.*
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.CachedValueProvider
@@ -34,12 +35,16 @@ fun PsiMethod.findAnnotation(type: AnnotationType): PsiAnnotation? =
  * The common declarations corresponding to this platform method.
  */
 val PsiMethod.commonMethods: Set<PsiMethod>
-    get() = if (CandleSettings.getInstance(project).psiCachingEnabled) {
-        CachedValuesManager.getManager(project).getCachedValue(this) {
-            CachedValueProvider.Result.create(computeCommonMethods(), this)
+    get() {
+        // Don't resolve (or cache) while indexing — see note in VirtualOverrideUtils.
+        if (DumbService.isDumb(project)) return emptySet()
+        return if (CandleSettings.getInstance(project).psiCachingEnabled) {
+            CachedValuesManager.getManager(project).getCachedValue(this) {
+                CachedValueProvider.Result.create(computeCommonMethods(), this)
+            }
+        } else {
+            computeCommonMethods()
         }
-    } else {
-        computeCommonMethods()
     }
 
 private fun PsiMethod.computeCommonMethods(): Set<PsiMethod> {
@@ -74,12 +79,16 @@ private fun PsiMethod.computeCommonMethods(): Set<PsiMethod> {
  * The platform implementations of this common method.
  */
 val PsiMethod.platformMethodsByPlatform: Map<Platform, Set<PsiMethod>>
-    get() = if (CandleSettings.getInstance(project).psiCachingEnabled) {
-        CachedValuesManager.getManager(project).getCachedValue(this) {
-            CachedValueProvider.Result.create(computePlatformMethodsByPlatform(), this)
+    get() {
+        // Don't resolve (or cache) while indexing — see note in VirtualOverrideUtils.
+        if (DumbService.isDumb(project)) return emptyMap()
+        return if (CandleSettings.getInstance(project).psiCachingEnabled) {
+            CachedValuesManager.getManager(project).getCachedValue(this) {
+                CachedValueProvider.Result.create(computePlatformMethodsByPlatform(), this)
+            }
+        } else {
+            computePlatformMethodsByPlatform()
         }
-    } else {
-        computePlatformMethodsByPlatform()
     }
 
 private fun PsiMethod.computePlatformMethodsByPlatform(): Map<Platform, Set<PsiMethod>> {
