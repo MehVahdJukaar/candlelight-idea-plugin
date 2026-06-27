@@ -50,9 +50,11 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     var activeTool: Tool = tools.first { it.id == "pencil" }
         set(value) {
             field = value
-            cursor = value.cursor
+            refreshCursor()
             onActiveToolChanged?.invoke(value)
         }
+
+    private val eyedropper: Tool get() = tools.first { it.id == "pick" }
 
     /**
      * Invoked whenever [activeTool] changes (e.g. via a keyboard shortcut), after the cursor has
@@ -68,8 +70,12 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         set(value) {
             field = value.coerceIn(1, MAX_BRUSH)
             tools.filterIsInstance<PencilTool>().forEach { it.brushSize = field }
+            onBrushSizeChanged?.invoke(field)
             repaint()
         }
+
+    /** Notifies the UI (slider/readout) when the brush size changes via keyboard or Alt+wheel. */
+    var onBrushSizeChanged: ((Int) -> Unit)? = null
 
     var colorListener: ((Color) -> Unit)? = null
     var editListener: (() -> Unit)? = null
@@ -81,6 +87,12 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
     /** True while the space bar is held: any tool temporarily pans, Photoshop-style. */
     private var spacePanning = false
+
+    /** True while Alt is held: paint tools temporarily sample color (the eyedropper). */
+    private var altSampling = false
+
+    /** The tool locked in at mouse-press, so a mid-stroke modifier flip can't switch tools. */
+    private var strokeTool: Tool? = null
 
     init {
         isOpaque = true
@@ -118,33 +130,40 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         addMouseListener(mouse)
         addMouseMotionListener(mouse)
 
-        // Hold space to temporarily pan with any tool; release restores the tool cursor.
+        // Hold space to pan with any tool; hold Alt to temporarily sample color with a paint tool.
         addKeyListener(object : java.awt.event.KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_SPACE && !spacePanning) {
-                    spacePanning = true
-                    cursor = ToolCursors.hand()
+                when (e.keyCode) {
+                    KeyEvent.VK_SPACE -> if (!spacePanning) { spacePanning = true; refreshCursor() }
+                    KeyEvent.VK_ALT -> if (!altSampling) { altSampling = true; refreshCursor(); repaint() }
                 }
             }
 
             override fun keyReleased(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_SPACE) {
-                    spacePanning = false
-                    cursor = activeTool.cursor
+                when (e.keyCode) {
+                    KeyEvent.VK_SPACE -> { spacePanning = false; refreshCursor() }
+                    KeyEvent.VK_ALT -> { altSampling = false; refreshCursor(); repaint() }
                 }
             }
         })
         addFocusListener(object : java.awt.event.FocusAdapter() {
             override fun focusLost(e: java.awt.event.FocusEvent) {
-                // A key-release can be missed when focus leaves mid-pan; reset so we don't get stuck.
-                if (spacePanning) {
+                // A key-release can be missed when focus leaves mid-gesture; reset so we don't stick.
+                if (spacePanning || altSampling) {
                     spacePanning = false
-                    cursor = activeTool.cursor
+                    altSampling = false
+                    refreshCursor()
+                    repaint()
                 }
             }
         })
 
         addMouseWheelListener { e ->
+            if (e.isAltDown) {
+                // Alt + wheel resizes the brush (wheel up = larger), matching many pixel editors.
+                if (e.wheelRotation != 0) brushSize -= e.wheelRotation
+                return@addMouseWheelListener
+            }
             if (e.isShiftDown) {
                 // Shift + wheel pans horizontally, matching most image editors.
                 viewport.pan(-e.preciseWheelRotation * WHEEL_PAN_STEP, 0.0)
@@ -168,9 +187,10 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     }
 
     /**
-     * Registers Photoshop-style keyboard shortcuts. Tool, zoom, undo/redo and deselect shortcuts are
+     * Registers Photoshop-style keyboard shortcuts. Tool, zoom, brush-size and deselect shortcuts are
      * bound editor-wide ([WHEN_IN_FOCUSED_WINDOW]) so they fire even when the canvas does not hold
-     * keyboard focus (e.g. while the toolbar is focused).
+     * keyboard focus (e.g. while the toolbar is focused). Undo/redo/save use real IDE shortcuts and
+     * are registered separately by [ImageEditorPanel] so they take precedence over the platform.
      */
     private fun bindKeybindings() {
         // ---- tool selection -----------------------------------------------------------------
@@ -182,6 +202,10 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_IN_FOCUSED_WINDOW) { selectTool("recolor") }
         bindKey(KeyEvent.VK_Z, 0, "tool.zoom", WHEN_IN_FOCUSED_WINDOW) { selectTool("zoom") }
         bindKey(KeyEvent.VK_H, 0, "tool.hand", WHEN_IN_FOCUSED_WINDOW) { selectTool("hand") }
+
+        // ---- brush size ---------------------------------------------------------------------
+        bindKey(KeyEvent.VK_OPEN_BRACKET, 0, "brush.smaller", WHEN_IN_FOCUSED_WINDOW) { brushSize-- }
+        bindKey(KeyEvent.VK_CLOSE_BRACKET, 0, "brush.larger", WHEN_IN_FOCUSED_WINDOW) { brushSize++ }
 
         // ---- zoom ---------------------------------------------------------------------------
         bindKey(KeyEvent.VK_0, 0, "fit", WHEN_IN_FOCUSED_WINDOW) { fitToWindow() }
@@ -200,10 +224,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         bindKey(KeyEvent.VK_DOWN, 0, "pan.down") { pan(0, -step) }
         bindKey(KeyEvent.VK_HOME, 0, "recenter", WHEN_IN_FOCUSED_WINDOW) { recenter() }
 
-        // ---- history & selection ------------------------------------------------------------
-        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK, "undo", WHEN_IN_FOCUSED_WINDOW) { document.undo() }
-        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK, "redo", WHEN_IN_FOCUSED_WINDOW) { document.redo() }
-        bindKey(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK, "redo2", WHEN_IN_FOCUSED_WINDOW) { document.redo() }
+        // ---- selection ----------------------------------------------------------------------
         bindKey(KeyEvent.VK_ESCAPE, 0, "deselect", WHEN_IN_FOCUSED_WINDOW) {
             document.selection = null
             repaint()
@@ -212,6 +233,19 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
     private fun selectTool(id: String) {
         activeTool = tools.first { it.id == id }
+    }
+
+    /** The tool that should act right now: Alt over a paint tool temporarily samples color. */
+    private fun toolFor(alt: Boolean): Tool =
+        if (alt && activeTool.altPicksColor) eyedropper else activeTool
+
+    /** Sets the cursor for the current gesture: space pans, Alt samples, otherwise the tool's own. */
+    private fun refreshCursor() {
+        cursor = when {
+            spacePanning -> ToolCursors.hand()
+            altSampling && activeTool.altPicksColor -> eyedropper.cursor
+            else -> activeTool.cursor
+        }
     }
 
     private fun actualSize() {
@@ -275,7 +309,9 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             return
         }
         if (!SwingUtilities.isLeftMouseButton(e)) return
-        activeTool.onPress(toolContext(e))
+        val tool = toolFor(e.isAltDown)
+        strokeTool = tool
+        tool.onPress(toolContext(e))
         clampView()
         repaint()
     }
@@ -290,7 +326,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             return
         }
         if (!SwingUtilities.isLeftMouseButton(e)) return
-        activeTool.onDrag(toolContext(e))
+        (strokeTool ?: toolFor(e.isAltDown)).onDrag(toolContext(e))
         clampView()
         repaint()
     }
@@ -300,7 +336,8 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             panLast = null
             return
         }
-        activeTool.onRelease(toolContext(e))
+        (strokeTool ?: activeTool).onRelease(toolContext(e))
+        strokeTool = null
         repaint()
     }
 
@@ -322,9 +359,10 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             g2.color = JBColor.border()
             g2.drawRect(imageRect.x, imageRect.y, imageRect.width, imageRect.height)
 
-            activeTool.paintOverlay(g2, viewport)
+            val previewTool = toolFor(altSampling)
+            previewTool.paintOverlay(g2, viewport)
             // The brush-outline hover preview is meaningless while the space-pan grab is active.
-            if (!spacePanning) hoverPoint?.let { activeTool.paintHover(g2, viewport, viewport.toImage(it.x, it.y)) }
+            if (!spacePanning) hoverPoint?.let { previewTool.paintHover(g2, viewport, viewport.toImage(it.x, it.y)) }
             document.selection?.let { CanvasRender.selectionOutline(g2, viewport.toComponent(it)) }
 
             paintInfo(g2)
@@ -334,7 +372,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     }
 
     private fun paintInfo(g2: Graphics2D) {
-        val label = "${document.width}×${document.height}   ${(viewport.zoom * 100).roundToInt()}%   ${activeTool.displayName.lowercase()}"
+        val label = "${document.width}×${document.height}   ${(viewport.zoom * 100).roundToInt()}%   ${toolFor(altSampling).displayName.lowercase()}"
         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
         g2.font = UIUtil.getLabelFont()
         val fm = g2.fontMetrics

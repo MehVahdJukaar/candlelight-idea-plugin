@@ -16,4 +16,7 @@ class EyedropperTool : Tool {
         val p = ctx.imagePoint
         ctx.document.colorAt(p.x, p.y)?.let(ctx.setColor)
     }
+
+    // Keep sampling while dragging (and while Alt-sampling from another tool).
+    override fun onDrag(ctx: ToolContext) = onPress(ctx)
 }
