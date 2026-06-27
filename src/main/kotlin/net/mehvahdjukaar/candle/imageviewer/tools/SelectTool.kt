@@ -1,7 +1,9 @@
 package net.mehvahdjukaar.candle.imageviewer.tools
 
+import java.awt.Cursor
 import java.awt.Point
 import java.awt.Rectangle
+import javax.swing.Icon
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -11,6 +13,8 @@ class SelectTool : Tool {
     override val id = "select"
     override val displayName = "Select"
     override val description = "Rectangular selection (Esc clears it)"
+    override val icon: Icon = MarqueeIcon()
+    override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
 
     private var start: Point? = null
 
