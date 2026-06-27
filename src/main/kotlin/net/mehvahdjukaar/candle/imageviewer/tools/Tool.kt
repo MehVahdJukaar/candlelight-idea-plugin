@@ -49,4 +49,10 @@ interface Tool {
 
     /** Optional transient overlay drawn on top of the image (component-space graphics). */
     fun paintOverlay(g: Graphics2D, viewport: Viewport) {}
+
+    /**
+     * Optional preview drawn at the hovered image pixel ([hover]), e.g. the pencil's brush outline.
+     * Called with the mouse position mapped to image-pixel coordinates while it is over the canvas.
+     */
+    fun paintHover(g: Graphics2D, viewport: Viewport, hover: Point) {}
 }

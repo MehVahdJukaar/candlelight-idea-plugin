@@ -1,12 +1,12 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
-    id("org.jetbrains.intellij.platform") version "2.3.0"
+    id("org.jetbrains.intellij.platform") version "2.17.0"
     kotlin("jvm") version "2.3.0"
 }
 
 group = "net.mehvahdjukaar"
-version = "1.8.0"
+version = "1.8.3"
 
 repositories {
     mavenCentral()
@@ -20,12 +20,14 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Try a confirmed 2024 or 2025 version
-        create("IC", "2025.1")
+        // Build against the platform we actually ship on. Compiling against 2025.1 and running
+        // on 2026.1 caused a binary-incompat linkage error that broke the image viewer's
+        // FileEditor at runtime. Note: the old create("IC", …) coordinate is no longer
+        // published since 2025.3 — use intellijIdea(version).
+        intellijIdea("2026.1.3")
         bundledPlugin("com.intellij.java")
 
         bundledPlugin("org.jetbrains.kotlin")
-        instrumentationTools()
         testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.Plugin.Java)
     }
@@ -36,9 +38,9 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         ideaVersion {
-            // "251" corresponds to the 2025.1 release cycle
-           // sinceBuild.set("251")
-           // untilBuild.set("251.*")
+            // Compatible from 2025.1 onward; leave the upper bound open so future builds load.
+            sinceBuild.set("251")
+            untilBuild.set(provider { null })
         }
     }
 }
@@ -68,11 +70,12 @@ tasks.register("github") {
     doLast {
         val version = project.version.toString()
 
-        exec {
-            commandLine("git", "tag", "v$version")
+        // Gradle 9 removed Project.exec; shell out via ProcessBuilder instead.
+        fun git(vararg args: String) {
+            val code = ProcessBuilder(listOf("git", *args)).inheritIO().start().waitFor()
+            if (code != 0) throw GradleException("git ${args.joinToString(" ")} failed with exit $code")
         }
-        exec {
-            commandLine("git", "push", "origin", "v$version")
-        }
+        git("tag", "v$version")
+        git("push", "origin", "v$version")
     }
 }

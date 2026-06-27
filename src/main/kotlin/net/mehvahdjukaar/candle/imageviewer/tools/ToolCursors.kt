@@ -42,6 +42,10 @@ object ToolCursors {
     fun zoom(): Cursor =
         cursor("img-zoom", GridHotspot(7f, 7f), ::drawZoomGlyph)
 
+    /** Hand (pan) cursor, hotspot at the palm center. */
+    fun hand(): Cursor =
+        cursor("img-hand", GridHotspot(8f, 9f), ::drawHandGlyph)
+
     private fun cursor(name: String, hotspot: GridHotspot, paint: (Graphics2D) -> Unit): Cursor =
         cache.getOrPut(name) { build(name, hotspot, paint) }
 

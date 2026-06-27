@@ -65,7 +65,15 @@ class ImageDocument(source: BufferedImage) {
     }
 
     /** Plots a line between two image-space points (Bresenham), respecting the selection. */
-    fun drawLine(x0: Int, y0: Int, x1: Int, y1: Int, argb: Int) {
+    fun drawLine(x0: Int, y0: Int, x1: Int, y1: Int, argb: Int) = drawBrushLine(x0, y0, x1, y1, 1, argb)
+
+    /** Stamps a [size]x[size] square of [argb] centered on ([cx], [cy]), respecting the selection. */
+    fun stampBrush(cx: Int, cy: Int, size: Int, argb: Int) {
+        if (putSquare(cx, cy, size, argb)) onContentChanged?.invoke()
+    }
+
+    /** Plots a line (Bresenham) stamping a [size]x[size] square brush at every step. */
+    fun drawBrushLine(x0: Int, y0: Int, x1: Int, y1: Int, size: Int, argb: Int) {
         var x = x0
         var y = y0
         val dx = abs(x1 - x)
@@ -74,7 +82,7 @@ class ImageDocument(source: BufferedImage) {
         val sy = if (y < y1) 1 else -1
         var err = dx + dy
         while (true) {
-            put(x, y, argb)
+            putSquare(x, y, size, argb)
             if (x == x1 && y == y1) break
             val e2 = 2 * err
             if (e2 >= dy) {
@@ -130,6 +138,19 @@ class ImageDocument(source: BufferedImage) {
             dispose()
         }
         onContentChanged?.invoke()
+    }
+
+    /** Writes a [size]x[size] square of [argb] centered on ([cx], [cy]); returns true if any pixel was set. */
+    private fun putSquare(cx: Int, cy: Int, size: Int, argb: Int): Boolean {
+        if (size <= 1) return put(cx, cy, argb)
+        val half = (size - 1) / 2
+        var changed = false
+        for (oy in 0 until size) {
+            for (ox in 0 until size) {
+                if (put(cx - half + ox, cy - half + oy, argb)) changed = true
+            }
+        }
+        return changed
     }
 
     private fun put(x: Int, y: Int, argb: Int): Boolean {
