@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>net.mehvahdjukaar.candlelight</id>
     <name>Candlelight Idea</name>
-    <vendor url="https://github.com/MehVahdJukaar/architectury-idea-plugin">Candlelight</vendor>
+    <vendor url="https://github.com/MehVahdJukaar/candlelight-idea-plugin">Candlelight</vendor>
 
     <description><![CDATA[
     Companion plugin for the Candlelight Gradle plugin.
