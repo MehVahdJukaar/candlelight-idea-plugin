@@ -20,6 +20,7 @@ import javax.swing.JScrollPane
 import javax.swing.Scrollable
 import javax.swing.ScrollPaneConstants
 import javax.swing.SwingUtilities
+import kotlin.math.ceil
 import kotlin.math.max
 
 /**
@@ -32,6 +33,7 @@ class PaletteWidget : JPanel(BorderLayout()) {
     var onColorPicked: ((Color) -> Unit)? = null
 
     private val content = WrapContent()
+    private var colorCount = 0
 
     init {
         val scroll = JBScrollPane(
@@ -42,11 +44,27 @@ class PaletteWidget : JPanel(BorderLayout()) {
         add(scroll, BorderLayout.CENTER)
     }
 
-    // Kept short so the palette never dominates the dock; it scrolls when there are many colors.
-    override fun getPreferredSize() = Dimension(JBUI.scale(120), JBUI.scale(58))
-    override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(58))
+    // Sizes to its content (so it takes no extra vertical space) but never grows past MAX_ROWS rows;
+    // beyond that it scrolls. Width stretches with the dock but can be narrowed.
+    override fun getPreferredSize() = Dimension(JBUI.scale(80), rowsHeight())
+    override fun getMaximumSize() = Dimension(Int.MAX_VALUE, rowsHeight())
+    override fun getMinimumSize() = Dimension(JBUI.scale(40), rowsHeight())
+
+    private fun rowsHeight(): Int {
+        val rows = if (colorCount == 0) 1 else minOf(neededRows(), MAX_ROWS)
+        return rows * cell() + JBUI.scale(4)
+    }
+
+    private fun neededRows(): Int {
+        val available = (width.takeIf { it > 0 } ?: JBUI.scale(120)) - JBUI.scale(6)
+        val cols = max(1, available / cell())
+        return ceil(colorCount.toDouble() / cols).toInt()
+    }
+
+    private fun cell() = JBUI.scale(SWATCH + GAP)
 
     fun setColors(colors: List<Color>) {
+        colorCount = colors.size
         content.removeAll()
         if (colors.isEmpty()) {
             content.add(JLabel("No colors").apply {
@@ -58,10 +76,11 @@ class PaletteWidget : JPanel(BorderLayout()) {
         }
         content.revalidate()
         content.repaint()
+        revalidate()
     }
 
     /** Flow content that tracks the viewport width so [WrapLayout] can wrap rows to fit. */
-    private inner class WrapContent : JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(2), JBUI.scale(2))), Scrollable {
+    private inner class WrapContent : JPanel(WrapLayout(FlowLayout.LEFT, JBUI.scale(GAP), JBUI.scale(GAP))), Scrollable {
         init {
             border = JBUI.Borders.empty(1)
         }
@@ -84,7 +103,7 @@ class PaletteWidget : JPanel(BorderLayout()) {
             })
         }
 
-        override fun getPreferredSize() = Dimension(JBUI.scale(16), JBUI.scale(16))
+        override fun getPreferredSize() = Dimension(JBUI.scale(SWATCH), JBUI.scale(SWATCH))
 
         override fun paintComponent(g: Graphics) {
             g.color = color
@@ -92,6 +111,12 @@ class PaletteWidget : JPanel(BorderLayout()) {
             g.color = JBColor.border()
             g.drawRect(0, 0, width - 1, height - 1)
         }
+    }
+
+    companion object {
+        private const val SWATCH = 16
+        private const val GAP = 2
+        private const val MAX_ROWS = 2
     }
 }
 

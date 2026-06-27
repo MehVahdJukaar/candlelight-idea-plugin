@@ -26,7 +26,7 @@ import kotlin.math.roundToInt
 
 /**
  * A compact, self-contained color picker: a 2D saturation/brightness square you can click and drag,
- * a hue strip beneath it, an RGB/HSB mode toggle and three numeric channel sliders. No dialog.
+ * a hue strip beneath it, an RGB/HSB mode toggle and three plain numeric channel sliders. No dialog.
  *
  * Hue/saturation/brightness are the canonical state (so the hue is preserved even at zero saturation
  * or brightness); RGB edits are converted into it.
@@ -59,6 +59,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         alignmentX = Component.LEFT_ALIGNMENT
 
+        hueSlider.trackGradient = { f -> Color.getHSBColor(f.toFloat(), 1f, 1f) }
         hueSlider.onChange = {
             if (!updating) {
                 hue = hueSlider.fraction.toFloat()
@@ -85,6 +86,10 @@ class ColorPickerWidget(initial: Color) : JPanel() {
         hue = hsb[0]; sat = hsb[1]; bri = hsb[2]
         refresh()
     }
+
+    // Stretch to the dock width but allow it to be narrowed.
+    override fun getMaximumSize() = Dimension(Int.MAX_VALUE, preferredSize.height)
+    override fun getMinimumSize() = Dimension(JBUI.scale(70), preferredSize.height)
 
     /** Sets the color from outside (eyedropper, palette) without firing [onColorChanged]. */
     fun setColorExternally(c: Color) {
@@ -150,7 +155,6 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     private fun refresh() {
         updating = true
         hueSlider.fraction = hue.toDouble()
-        hueSlider.gradient = { f -> Color.getHSBColor(f.toFloat(), 1f, 1f) }
         square.repaint()
         preview.repaint()
 
@@ -162,28 +166,13 @@ class ColorPickerWidget(initial: Color) : JPanel() {
                 val v = when (i) { 0 -> rgb.red; 1 -> rgb.green; else -> rgb.blue }
                 channelSliders[i].fraction = v / 255.0
                 valueLabels[i].text = v.toString()
-                channelSliders[i].gradient = { f -> rgbGradient(i, f) }
             } else {
                 val values = floatArrayOf(hue, sat, bri)
                 channelSliders[i].fraction = values[i].toDouble()
                 valueLabels[i].text = (values[i] * if (i == 0) 360 else 100).roundToInt().toString()
-                channelSliders[i].gradient = { f -> hsbGradient(i, f) }
             }
-            channelSliders[i].repaint()
         }
         updating = false
-    }
-
-    private fun rgbGradient(channel: Int, fraction: Double): Color {
-        val rgb = intArrayOf(color.red, color.green, color.blue)
-        rgb[channel] = (fraction * 255).roundToInt().coerceIn(0, 255)
-        return Color(rgb[0], rgb[1], rgb[2])
-    }
-
-    private fun hsbGradient(channel: Int, fraction: Double): Color = when (channel) {
-        0 -> Color.getHSBColor(fraction.toFloat(), 1f, 1f)
-        1 -> Color.getHSBColor(hue, fraction.toFloat(), bri)
-        else -> Color.getHSBColor(hue, sat, fraction.toFloat())
     }
 
     private fun emit() = onColorChanged?.invoke(color)
@@ -207,6 +196,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
 
         override fun getPreferredSize() = Dimension(JBUI.scale(120), JBUI.scale(92))
         override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(92))
+        override fun getMinimumSize() = Dimension(JBUI.scale(40), JBUI.scale(92))
 
         private fun pick(e: MouseEvent) {
             if (updating) return
@@ -257,7 +247,10 @@ class ColorPickerWidget(initial: Color) : JPanel() {
         }
     }
 
-    /** A horizontal slider whose track is a live gradient supplied by the owner. */
+    /**
+     * A horizontal slider. With [trackGradient] set it paints that gradient (used for the hue strip);
+     * otherwise it is a plain neutral slider (used for the numeric channels).
+     */
     private class ChannelSlider : JComponent() {
 
         var fraction: Double = 0.0
@@ -266,7 +259,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
                 repaint()
             }
 
-        var gradient: (Double) -> Color = { JBColor.GRAY }
+        var trackGradient: ((Double) -> Color)? = null
         var onChange: () -> Unit = {}
 
         init {
@@ -281,6 +274,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
 
         override fun getPreferredSize() = Dimension(JBUI.scale(80), JBUI.scale(12))
         override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(12))
+        override fun getMinimumSize() = Dimension(JBUI.scale(20), JBUI.scale(12))
 
         private fun setFromMouse(e: MouseEvent) {
             val thumb = JBUI.scale(THUMB)
@@ -299,9 +293,17 @@ class ColorPickerWidget(initial: Color) : JPanel() {
                 val trackY = JBUI.scale(1)
                 val trackH = height - JBUI.scale(2)
 
-                for (i in 0 until trackW) {
-                    g2.color = gradient(i.toDouble() / trackW)
-                    g2.fillRect(trackX + i, trackY, 1, trackH)
+                val gradient = trackGradient
+                if (gradient != null) {
+                    for (i in 0 until trackW) {
+                        g2.color = gradient(i.toDouble() / trackW)
+                        g2.fillRect(trackX + i, trackY, 1, trackH)
+                    }
+                } else {
+                    g2.color = TRACK_BG
+                    g2.fillRect(trackX, trackY, trackW, trackH)
+                    g2.color = TRACK_FILL
+                    g2.fillRect(trackX, trackY, (fraction * trackW).roundToInt().coerceIn(0, trackW), trackH)
                 }
                 g2.color = JBColor.border()
                 g2.drawRect(trackX, trackY, trackW - 1, trackH - 1)
@@ -318,6 +320,8 @@ class ColorPickerWidget(initial: Color) : JPanel() {
 
         companion object {
             private const val THUMB = 8
+            private val TRACK_BG = JBColor(Color(0xCD, 0xCD, 0xCD), Color(0x51, 0x51, 0x51))
+            private val TRACK_FILL = JBColor(Color(0x9A, 0x9A, 0x9A), Color(0x6E, 0x6E, 0x6E))
         }
     }
 
