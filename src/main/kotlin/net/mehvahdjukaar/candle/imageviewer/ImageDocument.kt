@@ -89,6 +89,23 @@ class ImageDocument(source: BufferedImage) {
         onContentChanged?.invoke()
     }
 
+    /** Replaces every pixel whose exact ARGB equals [target] with [replacement], within the selection. */
+    fun replaceColor(target: Int, replacement: Int) {
+        if (target == replacement) return
+        val sel = selection
+        var changed = false
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (sel != null && !sel.contains(x, y)) continue
+                if (image.getRGB(x, y) == target) {
+                    image.setRGB(x, y, replacement)
+                    changed = true
+                }
+            }
+        }
+        if (changed) onContentChanged?.invoke()
+    }
+
     /** Copies a region into a standalone image and clears it from the document (for Move). */
     fun liftRegion(region: Rectangle): BufferedImage {
         val r = region.intersection(Rectangle(0, 0, width, height))
