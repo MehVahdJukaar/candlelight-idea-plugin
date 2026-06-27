@@ -22,6 +22,7 @@ class PencilTool(private val erase: Boolean) : Tool {
         if (erase) "Erase pixels to transparent" else "Draw pixels with the foreground color"
     override val icon: Icon = if (erase) ToolIcons.ERASER else ToolIcons.PENCIL
     override val cursor: Cursor = if (erase) ToolCursors.eraser() else ToolCursors.pencil()
+    override val altPicksColor = true
 
     /** Side length, in image pixels, of the square brush. Shared by the canvas's brush-size slider. */
     var brushSize: Int = 1

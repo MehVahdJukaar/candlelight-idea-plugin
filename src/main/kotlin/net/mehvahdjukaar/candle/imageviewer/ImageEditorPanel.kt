@@ -1,7 +1,12 @@
 package net.mehvahdjukaar.candle.imageviewer
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionUpdateThread
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
@@ -19,14 +24,10 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
-import java.awt.event.ActionEvent
-import java.awt.event.InputEvent
-import java.awt.event.KeyEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import javax.imageio.ImageIO
-import javax.swing.AbstractAction
 import javax.swing.AbstractButton
 import javax.swing.Box
 import javax.swing.BoxLayout
@@ -38,7 +39,6 @@ import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JSlider
 import javax.swing.JToggleButton
-import javax.swing.KeyStroke
 import javax.swing.Scrollable
 import javax.swing.ScrollPaneConstants
 import javax.swing.Timer
@@ -91,15 +91,37 @@ class ImageEditorPanel(
         add(root, BorderLayout.CENTER)
         add(buildStatusBar(), BorderLayout.SOUTH)
 
-        getInputMap(WHEN_IN_FOCUSED_WINDOW)
-            .put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveImage")
-        actionMap.put("saveImage", object : AbstractAction() {
-            override fun actionPerformed(e: ActionEvent) = save()
-        })
+        registerIdeActions()
 
         refreshHistoryButtons()
         updateSaveState(clean = true)
         refreshPalette()
+    }
+
+    // ---- IDE shortcuts --------------------------------------------------------------------------
+
+    /**
+     * Re-binds the built-in Undo/Redo/Save shortcuts to this editor. Registering the actions on this
+     * component makes them win over the global keymap while the image editor has focus, so e.g.
+     * Ctrl+Z undoes the last pixel edit instead of being swallowed by the platform's editor undo.
+     */
+    private fun registerIdeActions() {
+        bindIdeShortcut(IdeActions.ACTION_UNDO, { canvas.document.canUndo }) { canvas.document.undo() }
+        bindIdeShortcut(IdeActions.ACTION_REDO, { canvas.document.canRedo }) { canvas.document.redo() }
+        // No IdeActions constant for Save All; its action id is the literal "SaveAll".
+        bindIdeShortcut("SaveAll", { dirty }) { save() }
+    }
+
+    private fun bindIdeShortcut(actionId: String, enabled: () -> Boolean, run: () -> Unit) {
+        val shortcuts = ActionManager.getInstance().getAction(actionId)?.shortcutSet ?: return
+        object : DumbAwareAction() {
+            override fun actionPerformed(e: AnActionEvent) = run()
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = enabled()
+            }
+
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        }.registerCustomShortcutSet(shortcuts, this)
     }
 
     // ---- dock -----------------------------------------------------------------------------------
@@ -163,6 +185,7 @@ class ImageEditorPanel(
     /** Slider (1..max) that drives the pencil/eraser brush size, with a live "N px" readout. */
     private fun buildBrushSlider(): JComponent {
         val slider = JSlider(1, ImageCanvas.MAX_BRUSH, canvas.brushSize)
+        slider.toolTipText = "Brush size  ([ and ], or Alt+scroll)"
         val value = JLabel("${canvas.brushSize} px").apply {
             font = JBUI.Fonts.miniFont()
             foreground = JBColor.GRAY
@@ -170,6 +193,11 @@ class ImageEditorPanel(
         slider.addChangeListener {
             canvas.brushSize = slider.value
             value.text = "${slider.value} px"
+        }
+        // Mirror keyboard ([ ]) / Alt+wheel brush-size changes from the canvas back into the slider.
+        canvas.onBrushSizeChanged = { size ->
+            slider.value = size
+            value.text = "$size px"
         }
         return JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
             alignmentX = Component.LEFT_ALIGNMENT

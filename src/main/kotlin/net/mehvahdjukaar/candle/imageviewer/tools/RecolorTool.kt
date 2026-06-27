@@ -12,6 +12,7 @@ class RecolorTool : Tool {
     override val displayName = "Recolor"
     override val description = "Replace all pixels of the clicked color with the foreground color"
     override val icon: Icon = ToolIcons.RECOLOR
+    override val altPicksColor = true
 
     override fun onPress(ctx: ToolContext) {
         val p = ctx.imagePoint

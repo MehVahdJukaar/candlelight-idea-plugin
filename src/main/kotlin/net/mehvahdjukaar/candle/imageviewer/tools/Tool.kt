@@ -43,6 +43,12 @@ interface Tool {
 
     val cursor: Cursor get() = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
 
+    /**
+     * True if holding Alt should temporarily switch to the eyedropper while this tool is active,
+     * Photoshop-style. Set on color-painting tools (pencil, eraser, recolor).
+     */
+    val altPicksColor: Boolean get() = false
+
     fun onPress(ctx: ToolContext) {}
     fun onDrag(ctx: ToolContext) {}
     fun onRelease(ctx: ToolContext) {}
