@@ -13,7 +13,7 @@ class SelectTool : Tool {
     override val id = "select"
     override val displayName = "Select"
     override val description = "Rectangular selection (Esc clears it)"
-    override val icon: Icon = MarqueeIcon()
+    override val icon: Icon = ToolIcons.SELECT
     override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
 
     private var start: Point? = null

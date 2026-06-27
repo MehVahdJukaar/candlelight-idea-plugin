@@ -5,26 +5,27 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
+import com.intellij.ui.JBSplitter
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import net.mehvahdjukaar.candle.imageviewer.tools.Tool
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
-import java.awt.Cursor
-import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Graphics
+import java.awt.Graphics2D
+import java.awt.RenderingHints
 import java.awt.event.ActionEvent
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import javax.imageio.ImageIO
 import javax.swing.AbstractAction
+import javax.swing.AbstractButton
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.ButtonGroup
@@ -38,8 +39,9 @@ import javax.swing.JToggleButton
 import javax.swing.KeyStroke
 
 /**
- * A basic image editor: a Photoshop-style tool palette on the left, the editable [ImageCanvas] in
- * the center, and a status bar showing the saved/unsaved state.
+ * A basic image editor. The left dock holds an embedded, always-visible color picker on top and a
+ * 2-column tool palette below it; both the dock width and the color/tools split are draggable. The
+ * editable [ImageCanvas] fills the rest, with a saved/unsaved status bar along the bottom.
  */
 class ImageEditorPanel(
     private val file: VirtualFile,
@@ -57,20 +59,32 @@ class ImageEditorPanel(
     private val statusDot = StatusDot()
     private val statusLabel = JBLabel()
 
-    private var swatchColor: Color = canvas.currentColor
-    private val swatch = ColorSwatch()
+    private val colorChooser = JColorChooser(canvas.currentColor)
+    private var syncingChooser = false
 
     private var dirty = false
 
     val preferredFocus: JComponent get() = canvas
 
     init {
-        canvas.colorListener = { updateSwatch(it) }
+        canvas.colorListener = { syncChooser(it) }
         canvas.editListener = { onContentEdited() }
         canvas.onActiveToolChanged = { tool -> toolButtons[tool]?.isSelected = true }
 
-        add(buildPalette(), BorderLayout.WEST)
-        add(canvas, BorderLayout.CENTER)
+        // Picking a color in the embedded chooser updates the active color live (no dialog).
+        colorChooser.selectionModel.addChangeListener {
+            if (!syncingChooser) canvas.setCurrentColor(colorChooser.color)
+        }
+
+        val dock = JBSplitter(true, 0.6f).apply {
+            firstComponent = buildColorSection()
+            secondComponent = buildToolsSection()
+        }
+        val root = JBSplitter(false, 0.3f).apply {
+            firstComponent = dock
+            secondComponent = canvas
+        }
+        add(root, BorderLayout.CENTER)
         add(buildStatusBar(), BorderLayout.SOUTH)
 
         getInputMap(WHEN_IN_FOCUSED_WINDOW)
@@ -83,44 +97,58 @@ class ImageEditorPanel(
         updateSaveState(clean = true)
     }
 
-    // ---- palette --------------------------------------------------------------------------------
+    // ---- color section --------------------------------------------------------------------------
 
-    private fun buildPalette(): JComponent {
-        val column = JPanel().apply {
+    private fun buildColorSection(): JComponent = JPanel(BorderLayout()).apply {
+        border = JBUI.Borders.empty(6, 5)
+        add(sectionLabel("Color"), BorderLayout.NORTH)
+        add(JBScrollPane(colorChooser).apply { border = JBUI.Borders.empty() }, BorderLayout.CENTER)
+    }
+
+    private fun syncChooser(color: Color) {
+        syncingChooser = true
+        colorChooser.color = color
+        syncingChooser = false
+    }
+
+    // ---- tool palette ---------------------------------------------------------------------------
+
+    private fun buildToolsSection(): JComponent {
+        val content = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.empty(6, 5)
         }
 
-        column.add(sectionLabel("Color"))
-        column.add(swatch)
-        column.add(Box.createVerticalStrut(JBUI.scale(10)))
-
-        column.add(sectionLabel("Tools"))
+        content.add(sectionLabel("Tools"))
         val group = ButtonGroup()
-        canvas.tools.forEach { tool ->
-            val button = toolButton(tool, group)
-            toolButtons[tool] = button
-            column.add(button)
-            column.add(Box.createVerticalStrut(JBUI.scale(2)))
+        val buttons = canvas.tools.map { tool ->
+            toolButton(tool, group).also { toolButtons[tool] = it }
         }
-        column.add(Box.createVerticalStrut(JBUI.scale(8)))
+        content.add(twoColumnGrid(buttons))
+        content.add(Box.createVerticalStrut(JBUI.scale(10)))
 
-        column.add(sectionLabel("Edit"))
+        content.add(sectionLabel("Edit"))
         undoButton = actionButton(AllIcons.Actions.Undo, "Undo", "Ctrl+Z") { canvas.document.undo() }
         redoButton = actionButton(AllIcons.Actions.Redo, "Redo", "Ctrl+Shift+Z") { canvas.document.redo() }
         saveButton = actionButton(AllIcons.Actions.MenuSaveall, "Save", "Ctrl+S") { save() }
-        column.add(undoButton)
-        column.add(Box.createVerticalStrut(JBUI.scale(2)))
-        column.add(redoButton)
-        column.add(Box.createVerticalStrut(JBUI.scale(2)))
-        column.add(saveButton)
+        content.add(row(undoButton, redoButton, saveButton))
 
-        // Anchor everything to the top and add a divider against the canvas.
-        return JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.customLine(JBColor.border(), 0, 0, 0, 1)
-            add(column, BorderLayout.NORTH)
-        }
+        val holder = JPanel(BorderLayout()).apply { add(content, BorderLayout.NORTH) }
+        return JBScrollPane(holder).apply { border = JBUI.Borders.empty() }
     }
+
+    /** Lays out [buttons] left-to-right, two per row. */
+    private fun twoColumnGrid(buttons: List<JComponent>): JComponent = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        alignmentX = Component.LEFT_ALIGNMENT
+        buttons.chunked(2).forEach { pair -> add(row(*pair.toTypedArray())) }
+    }
+
+    private fun row(vararg components: JComponent): JComponent =
+        JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), JBUI.scale(2))).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+            components.forEach { add(it) }
+        }
 
     private fun sectionLabel(text: String): JComponent = JLabel(text).apply {
         alignmentX = Component.LEFT_ALIGNMENT
@@ -130,7 +158,7 @@ class ImageEditorPanel(
     }
 
     private fun toolButton(tool: Tool, group: ButtonGroup): JToggleButton =
-        JToggleButton(tool.icon).apply {
+        ToolToggleButton(tool.icon).apply {
             toolTipText = tooltip(tool.displayName, SHORTCUTS[tool.id], tool.description)
             isSelected = tool == canvas.activeTool
             squareIconButton(this)
@@ -139,18 +167,17 @@ class ImageEditorPanel(
         }
 
     private fun actionButton(icon: Icon, name: String, shortcut: String, action: () -> Unit): JButton =
-        JButton(icon).apply {
+        FlatActionButton(icon).apply {
             toolTipText = tooltip(name, shortcut, null)
             squareIconButton(this)
             addActionListener { action() }
         }
 
-    private fun squareIconButton(button: javax.swing.AbstractButton) {
+    private fun squareIconButton(button: AbstractButton) {
         val size = JBUI.size(BUTTON_SIZE, BUTTON_SIZE)
         button.preferredSize = size
         button.minimumSize = size
         button.maximumSize = size
-        button.alignmentX = Component.LEFT_ALIGNMENT
         button.margin = JBUI.emptyInsets()
         button.isFocusable = false
     }
@@ -171,19 +198,6 @@ class ImageEditorPanel(
         )
         add(statusDot)
         add(statusLabel)
-    }
-
-    // ---- color ----------------------------------------------------------------------------------
-
-    private fun chooseColor() {
-        val chosen = JColorChooser.showDialog(this, "Foreground Color", canvas.currentColor) ?: return
-        canvas.setCurrentColor(chosen)
-        updateSwatch(chosen)
-    }
-
-    private fun updateSwatch(color: Color) {
-        swatchColor = color
-        swatch.repaint()
     }
 
     // ---- save / dirty state ---------------------------------------------------------------------
@@ -246,28 +260,53 @@ class ImageEditorPanel(
         return out
     }
 
-    /** The foreground-color well; click to open the color chooser. */
-    private inner class ColorSwatch : JPanel() {
+    /** Paints the native IntelliJ flat-toolbar background (hover / pressed) behind an icon button. */
+    private fun paintFlatBackground(g: Graphics, button: AbstractButton, selected: Boolean) {
+        val model = button.model
+        val active = selected || model.isPressed || model.isArmed
+        val hovered = model.isRollover
+        if (!active && !hovered) return
+        val g2 = g.create() as Graphics2D
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            val arc = JBUI.scale(6)
+            g2.color = if (active) JBUI.CurrentTheme.ActionButton.pressedBackground()
+            else JBUI.CurrentTheme.ActionButton.hoverBackground()
+            g2.fillRoundRect(0, 0, button.width, button.height, arc, arc)
+            if (selected) {
+                g2.color = JBUI.CurrentTheme.ActionButton.pressedBorder()
+                g2.drawRoundRect(0, 0, button.width - 1, button.height - 1, arc, arc)
+            }
+        } finally {
+            g2.dispose()
+        }
+    }
+
+    /** Flat icon toggle button whose selected state is clearly highlighted (the active tool). */
+    private inner class ToolToggleButton(icon: Icon) : JToggleButton(icon) {
         init {
-            alignmentX = Component.LEFT_ALIGNMENT
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            toolTipText = tooltip("Foreground color", null, "Click to change")
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) = chooseColor()
-            })
+            isContentAreaFilled = false
+            isBorderPainted = false
+            isRolloverEnabled = true
         }
 
-        override fun getPreferredSize() = JBUI.size(BUTTON_SIZE, BUTTON_SIZE)
-        override fun getMinimumSize() = preferredSize
-        override fun getMaximumSize() = preferredSize
+        override fun paintComponent(g: Graphics) {
+            paintFlatBackground(g, this, isSelected)
+            super.paintComponent(g)
+        }
+    }
+
+    /** Flat icon action button matching the tool buttons' look (hover only, no selected state). */
+    private inner class FlatActionButton(icon: Icon) : JButton(icon) {
+        init {
+            isContentAreaFilled = false
+            isBorderPainted = false
+            isRolloverEnabled = true
+        }
 
         override fun paintComponent(g: Graphics) {
-            // Checkerboard behind the swatch so a transparent color reads as transparent.
-            CanvasRender.checkerboard(g as java.awt.Graphics2D, java.awt.Rectangle(0, 0, width, height))
-            g.color = swatchColor
-            g.fillRect(0, 0, width, height)
-            g.color = JBColor.border()
-            g.drawRect(0, 0, width - 1, height - 1)
+            paintFlatBackground(g, this, selected = false)
+            super.paintComponent(g)
         }
     }
 
@@ -278,8 +317,8 @@ class ImageEditorPanel(
         override fun getPreferredSize() = JBUI.size(10, 10)
 
         override fun paintComponent(g: Graphics) {
-            val g2 = g as java.awt.Graphics2D
-            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+            val g2 = g as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             val d = JBUI.scale(8)
             g2.color = color
             g2.fillOval((width - d) / 2, (height - d) / 2, d, d)

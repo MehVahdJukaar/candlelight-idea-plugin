@@ -9,7 +9,7 @@ class EyedropperTool : Tool {
     override val id = "pick"
     override val displayName = "Pick"
     override val description = "Eyedropper — pick a color from the image"
-    override val icon: Icon = EyedropperIcon()
+    override val icon: Icon = ToolIcons.PICK
     override val cursor: Cursor = ToolCursors.eyedropper()
 
     override fun onPress(ctx: ToolContext) {
