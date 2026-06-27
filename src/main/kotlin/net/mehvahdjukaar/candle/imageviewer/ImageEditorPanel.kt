@@ -31,17 +31,19 @@ import javax.swing.BoxLayout
 import javax.swing.ButtonGroup
 import javax.swing.Icon
 import javax.swing.JButton
-import javax.swing.JColorChooser
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JToggleButton
 import javax.swing.KeyStroke
+import javax.swing.Timer
+import kotlin.math.ceil
+import kotlin.math.sqrt
 
 /**
- * A basic image editor. The left dock holds an embedded, always-visible color picker on top and a
- * 2-column tool palette below it; both the dock width and the color/tools split are draggable. The
- * editable [ImageCanvas] fills the rest, with a saved/unsaved status bar along the bottom.
+ * A compact image editor. The left dock stacks a palette of the image's colors, an embedded color
+ * picker, a 3-column tool palette and the edit actions; its width is draggable against the canvas.
+ * A status bar along the bottom shows the saved/unsaved state.
  */
 class ImageEditorPanel(
     private val file: VirtualFile,
@@ -59,29 +61,26 @@ class ImageEditorPanel(
     private val statusDot = StatusDot()
     private val statusLabel = JBLabel()
 
-    private val colorChooser = JColorChooser(canvas.currentColor)
-    private var syncingChooser = false
+    private val paletteWidget = PaletteWidget()
+    private val colorPicker = ColorPickerWidget(canvas.currentColor)
+
+    // Rescanning the image on every painted pixel would be wasteful, so coalesce edits.
+    private val paletteTimer = Timer(250) { refreshPalette() }.apply { isRepeats = false }
 
     private var dirty = false
 
     val preferredFocus: JComponent get() = canvas
 
     init {
-        canvas.colorListener = { syncChooser(it) }
+        canvas.colorListener = { colorPicker.setColorExternally(it) }
         canvas.editListener = { onContentEdited() }
         canvas.onActiveToolChanged = { tool -> toolButtons[tool]?.isSelected = true }
 
-        // Picking a color in the embedded chooser updates the active color live (no dialog).
-        colorChooser.selectionModel.addChangeListener {
-            if (!syncingChooser) canvas.setCurrentColor(colorChooser.color)
-        }
+        colorPicker.onColorChanged = { canvas.setCurrentColor(it) }
+        paletteWidget.onColorPicked = { canvas.setCurrentColor(it) }
 
-        val dock = JBSplitter(true, 0.6f).apply {
-            firstComponent = buildColorSection()
-            secondComponent = buildToolsSection()
-        }
-        val root = JBSplitter(false, 0.3f).apply {
-            firstComponent = dock
+        val root = JBSplitter(false, 0.24f).apply {
+            firstComponent = buildDock()
             secondComponent = canvas
         }
         add(root, BorderLayout.CENTER)
@@ -95,56 +94,52 @@ class ImageEditorPanel(
 
         refreshHistoryButtons()
         updateSaveState(clean = true)
+        refreshPalette()
     }
 
-    // ---- color section --------------------------------------------------------------------------
+    // ---- dock -----------------------------------------------------------------------------------
 
-    private fun buildColorSection(): JComponent = JPanel(BorderLayout()).apply {
-        border = JBUI.Borders.empty(6, 5)
-        add(sectionLabel("Color"), BorderLayout.NORTH)
-        add(JBScrollPane(colorChooser).apply { border = JBUI.Borders.empty() }, BorderLayout.CENTER)
-    }
-
-    private fun syncChooser(color: Color) {
-        syncingChooser = true
-        colorChooser.color = color
-        syncingChooser = false
-    }
-
-    // ---- tool palette ---------------------------------------------------------------------------
-
-    private fun buildToolsSection(): JComponent {
+    private fun buildDock(): JComponent {
         val content = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.empty(6, 5)
         }
 
+        content.add(sectionLabel("Palette"))
+        content.add(leftAligned(paletteWidget))
+        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+
+        content.add(sectionLabel("Color"))
+        content.add(leftAligned(colorPicker))
+        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+
         content.add(sectionLabel("Tools"))
         val group = ButtonGroup()
-        val buttons = canvas.tools.map { tool ->
-            toolButton(tool, group).also { toolButtons[tool] = it }
-        }
-        content.add(twoColumnGrid(buttons))
-        content.add(Box.createVerticalStrut(JBUI.scale(10)))
+        val toolBtns = canvas.tools.map { tool -> toolButton(tool, group).also { toolButtons[tool] = it } }
+        content.add(grid(toolBtns, COLUMNS))
+        content.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         content.add(sectionLabel("Edit"))
         undoButton = actionButton(AllIcons.Actions.Undo, "Undo", "Ctrl+Z") { canvas.document.undo() }
         redoButton = actionButton(AllIcons.Actions.Redo, "Redo", "Ctrl+Shift+Z") { canvas.document.redo() }
         saveButton = actionButton(AllIcons.Actions.MenuSaveall, "Save", "Ctrl+S") { save() }
-        content.add(row(undoButton, redoButton, saveButton))
+        content.add(grid(listOf(undoButton, redoButton, saveButton), COLUMNS))
 
         val holder = JPanel(BorderLayout()).apply { add(content, BorderLayout.NORTH) }
         return JBScrollPane(holder).apply { border = JBUI.Borders.empty() }
     }
 
-    /** Lays out [buttons] left-to-right, two per row. */
-    private fun twoColumnGrid(buttons: List<JComponent>): JComponent = JPanel().apply {
+    /** Wraps [c] so it stays left-aligned and full-width inside the vertical [BoxLayout] dock. */
+    private fun leftAligned(c: JComponent): JComponent = c.apply { alignmentX = Component.LEFT_ALIGNMENT }
+
+    /** Lays [components] out left-to-right, [cols] per row, keeping their natural size. */
+    private fun grid(components: List<JComponent>, cols: Int): JComponent = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         alignmentX = Component.LEFT_ALIGNMENT
-        buttons.chunked(2).forEach { pair -> add(row(*pair.toTypedArray())) }
+        components.chunked(cols).forEach { add(row(it)) }
     }
 
-    private fun row(vararg components: JComponent): JComponent =
+    private fun row(components: List<JComponent>): JComponent =
         JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), JBUI.scale(2))).apply {
             alignmentX = Component.LEFT_ALIGNMENT
             components.forEach { add(it) }
@@ -189,6 +184,39 @@ class ImageEditorPanel(
         append("</html>")
     }
 
+    // ---- palette --------------------------------------------------------------------------------
+
+    private fun refreshPalette() = paletteWidget.setColors(extractPalette(canvas.document.image))
+
+    /** Distinct opaque colors in the image, most frequent first then capped, ordered by hue. */
+    private fun extractPalette(img: BufferedImage): List<Color> {
+        val counts = HashMap<Int, Int>()
+        val total = img.width.toLong() * img.height
+        val step = if (total > MAX_SCAN) ceil(sqrt(total.toDouble() / MAX_SCAN)).toInt() else 1
+        var y = 0
+        while (y < img.height) {
+            var x = 0
+            while (x < img.width) {
+                val argb = img.getRGB(x, y)
+                if ((argb ushr 24) and 0xFF >= 128) {
+                    val rgb = argb or (0xFF shl 24)
+                    counts[rgb] = (counts[rgb] ?: 0) + 1
+                }
+                x += step
+            }
+            y += step
+        }
+        return counts.entries.asSequence()
+            .sortedByDescending { it.value }
+            .take(MAX_PALETTE)
+            .map { Color(it.key) }
+            .sortedWith(compareBy({ hue(it) }, { brightness(it) }))
+            .toList()
+    }
+
+    private fun hue(c: Color) = Color.RGBtoHSB(c.red, c.green, c.blue, null)[0]
+    private fun brightness(c: Color) = Color.RGBtoHSB(c.red, c.green, c.blue, null)[2]
+
     // ---- status bar -----------------------------------------------------------------------------
 
     private fun buildStatusBar(): JComponent = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(3))).apply {
@@ -205,6 +233,7 @@ class ImageEditorPanel(
     private fun onContentEdited() {
         updateSaveState(clean = false)
         refreshHistoryButtons()
+        paletteTimer.restart()
     }
 
     private fun refreshHistoryButtons() {
@@ -327,6 +356,9 @@ class ImageEditorPanel(
 
     companion object {
         private const val BUTTON_SIZE = 30
+        private const val COLUMNS = 3
+        private const val MAX_PALETTE = 48
+        private const val MAX_SCAN = 200_000L
 
         private val SHORTCUTS = mapOf("pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E")
 
