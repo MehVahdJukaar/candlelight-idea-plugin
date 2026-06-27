@@ -122,36 +122,26 @@ class ImageViewerComponent(
     override fun paintComponent(g: Graphics) {
         val g2 = g.create() as Graphics2D
         try {
-            paintCheckerboard(g2)
+            g2.color = CanvasRender.CANVAS_BACKGROUND
+            g2.fillRect(0, 0, width, height)
+
+            val x = offsetX.roundToInt()
+            val y = offsetY.roundToInt()
+            val w = (imgW * zoom).roundToInt().coerceAtLeast(1)
+            val h = (imgH * zoom).roundToInt().coerceAtLeast(1)
+            CanvasRender.checkerboard(g2, java.awt.Rectangle(x, y, w, h))
 
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR)
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
-            val w = (imgW * zoom).roundToInt().coerceAtLeast(1)
-            val h = (imgH * zoom).roundToInt().coerceAtLeast(1)
             // Passing `this` as the observer drives GIF animation (see imageUpdate).
-            g2.drawImage(image, offsetX.roundToInt(), offsetY.roundToInt(), w, h, this)
+            g2.drawImage(image, x, y, w, h, this)
+
+            g2.color = JBColor.border()
+            g2.drawRect(x, y, w, h)
 
             paintInfo(g2)
         } finally {
             g2.dispose()
-        }
-    }
-
-    private fun paintCheckerboard(g2: Graphics2D) {
-        val cell = JBUI.scale(8)
-        g2.color = CHECKER_A
-        g2.fillRect(0, 0, width, height)
-        g2.color = CHECKER_B
-        var y = 0
-        var row = 0
-        while (y < height) {
-            var x = if (row % 2 == 0) 0 else cell
-            while (x < width) {
-                g2.fillRect(x, y, cell, cell)
-                x += cell * 2
-            }
-            y += cell
-            row++
         }
     }
 
@@ -190,8 +180,5 @@ class ImageViewerComponent(
         private const val ZOOM_STEP = 1.2
         private const val MIN_ZOOM = 0.02
         private const val MAX_ZOOM = 64.0
-
-        private val CHECKER_A = JBColor(Color(0xCB, 0xCB, 0xCB), Color(0x3C, 0x3C, 0x3C))
-        private val CHECKER_B = JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x4A, 0x4A, 0x4A))
     }
 }
