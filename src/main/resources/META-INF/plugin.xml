@@ -25,6 +25,8 @@
 
         <editorTabTitleProvider implementation="net.mehvahdjukaar.candle.title.ModuleAwareTabTitleProvider"/>
 
+        <fileEditorProvider implementation="net.mehvahdjukaar.candle.imageviewer.ImageViewerProvider" order="first"/>
+
 
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>
