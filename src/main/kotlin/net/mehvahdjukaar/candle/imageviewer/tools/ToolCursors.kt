@@ -38,6 +38,10 @@ object ToolCursors {
     fun eraser(): Cursor =
         cursor("img-eraser", GridHotspot(6.5f, 11.5f), ::drawEraserGlyph)
 
+    /** Zoom cursor, hotspot at the magnifier lens center. */
+    fun zoom(): Cursor =
+        cursor("img-zoom", GridHotspot(7f, 7f), ::drawZoomGlyph)
+
     private fun cursor(name: String, hotspot: GridHotspot, paint: (Graphics2D) -> Unit): Cursor =
         cache.getOrPut(name) { build(name, hotspot, paint) }
 

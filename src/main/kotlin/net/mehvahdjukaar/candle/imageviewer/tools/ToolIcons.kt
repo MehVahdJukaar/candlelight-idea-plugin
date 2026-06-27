@@ -24,6 +24,7 @@ object ToolIcons {
     val MOVE: Icon = load("move")
     val PENCIL: Icon = load("pencil")
     val ERASER: Icon = load("eraser")
+    val ZOOM: Icon = load("zoom")
 
     private fun load(name: String): Icon = IconLoader.getIcon("/icons/imageviewer/$name.svg", javaClass)
 }
@@ -77,6 +78,16 @@ internal fun drawEraserGlyph(g: Graphics2D) {
     g.draw(Line2D.Float(5.0f, 10.0f, 11.5f, 3.5f))
     g.draw(Line2D.Float(7.0f, 8.0f, 9.5f, 10.5f))
     g.draw(Line2D.Float(3.0f, 13.5f, 5.5f, 13.5f))
+}
+
+/** Magnifier: a lens centered around (~7, 7) with a handle to the bottom-right and a small plus. */
+internal fun drawZoomGlyph(g: Graphics2D) {
+    g.stroke = thin(1.4f)
+    g.draw(java.awt.geom.Ellipse2D.Float(3f, 3f, 8f, 8f))
+    g.draw(Line2D.Float(10.0f, 10.0f, 13.5f, 13.5f))
+    g.stroke = thin(1.1f)
+    g.draw(Line2D.Float(7.0f, 5.0f, 7.0f, 9.0f))
+    g.draw(Line2D.Float(5.0f, 7.0f, 9.0f, 7.0f))
 }
 
 /**

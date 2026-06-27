@@ -16,6 +16,8 @@ class ToolContext(
     val document: ImageDocument,
     val viewport: Viewport,
     val imagePoint: Point,
+    val componentPoint: Point,
+    val altDown: Boolean,
     val color: Color,
     val setColor: (Color) -> Unit,
 )

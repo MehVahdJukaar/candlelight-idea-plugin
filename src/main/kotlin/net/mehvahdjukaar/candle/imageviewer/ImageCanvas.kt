@@ -9,6 +9,7 @@ import net.mehvahdjukaar.candle.imageviewer.tools.PencilTool
 import net.mehvahdjukaar.candle.imageviewer.tools.SelectTool
 import net.mehvahdjukaar.candle.imageviewer.tools.Tool
 import net.mehvahdjukaar.candle.imageviewer.tools.ToolContext
+import net.mehvahdjukaar.candle.imageviewer.tools.ZoomTool
 import java.awt.Color
 import java.awt.Graphics
 import java.awt.Graphics2D
@@ -37,7 +38,9 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     val document = ImageDocument(source)
     private val viewport = Viewport()
 
-    val tools: List<Tool> = listOf(EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true))
+    val tools: List<Tool> = listOf(
+        EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true), ZoomTool(),
+    )
 
     var activeTool: Tool = tools.first { it.id == "pencil" }
         set(value) {
@@ -109,6 +112,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_IN_FOCUSED_WINDOW) { selectTool("move") }
         bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_IN_FOCUSED_WINDOW) { selectTool("pencil") }
         bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_IN_FOCUSED_WINDOW) { selectTool("eraser") }
+        bindKey(KeyEvent.VK_Z, 0, "tool.zoom", WHEN_IN_FOCUSED_WINDOW) { selectTool("zoom") }
 
         // ---- zoom ---------------------------------------------------------------------------
         bindKey(KeyEvent.VK_0, 0, "fit", WHEN_IN_FOCUSED_WINDOW) { fitToWindow() }
@@ -161,7 +165,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     // ---- input ----------------------------------------------------------------------------------
 
     private fun toolContext(e: MouseEvent) =
-        ToolContext(document, viewport, viewport.toImage(e.x, e.y), currentColor, ::setCurrentColor)
+        ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, currentColor, ::setCurrentColor)
 
     private fun onPress(e: MouseEvent) {
         if (SwingUtilities.isMiddleMouseButton(e)) {

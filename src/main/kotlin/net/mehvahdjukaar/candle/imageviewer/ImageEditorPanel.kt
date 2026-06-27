@@ -13,9 +13,11 @@ import net.mehvahdjukaar.candle.imageviewer.tools.Tool
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
+import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.event.ActionEvent
 import java.awt.event.InputEvent
@@ -36,6 +38,8 @@ import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JToggleButton
 import javax.swing.KeyStroke
+import javax.swing.Scrollable
+import javax.swing.ScrollPaneConstants
 import javax.swing.Timer
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -100,7 +104,7 @@ class ImageEditorPanel(
     // ---- dock -----------------------------------------------------------------------------------
 
     private fun buildDock(): JComponent {
-        val content = JPanel().apply {
+        val content = ScrollableColumn().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             border = JBUI.Borders.empty(6, 5)
         }
@@ -125,8 +129,20 @@ class ImageEditorPanel(
         saveButton = actionButton(AllIcons.Actions.MenuSaveall, "Save", "Ctrl+S") { save() }
         content.add(grid(listOf(undoButton, redoButton, saveButton), COLUMNS))
 
-        val holder = JPanel(BorderLayout()).apply { add(content, BorderLayout.NORTH) }
-        return JBScrollPane(holder).apply { border = JBUI.Borders.empty() }
+        return JBScrollPane(
+            content,
+            ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+            ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER,
+        ).apply { border = JBUI.Borders.empty() }
+    }
+
+    /** Dock content that tracks the viewport width so its widgets shrink/stretch with the dock. */
+    private inner class ScrollableColumn : JPanel(), Scrollable {
+        override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
+        override fun getScrollableUnitIncrement(r: Rectangle, orientation: Int, direction: Int) = JBUI.scale(16)
+        override fun getScrollableBlockIncrement(r: Rectangle, orientation: Int, direction: Int) = r.height
+        override fun getScrollableTracksViewportWidth() = true
+        override fun getScrollableTracksViewportHeight() = false
     }
 
     /** Wraps [c] so it stays left-aligned and full-width inside the vertical [BoxLayout] dock. */
@@ -360,7 +376,7 @@ class ImageEditorPanel(
         private const val MAX_PALETTE = 48
         private const val MAX_SCAN = 200_000L
 
-        private val SHORTCUTS = mapOf("pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E")
+        private val SHORTCUTS = mapOf("pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E", "zoom" to "Z")
 
         private val SAVED_COLOR = JBColor(Color(0x3C, 0x8B, 0x3C), Color(0x59, 0xA8, 0x69))
         private val UNSAVED_COLOR = JBColor(Color(0xB8, 0x6A, 0x00), Color(0xD8, 0x95, 0x16))
