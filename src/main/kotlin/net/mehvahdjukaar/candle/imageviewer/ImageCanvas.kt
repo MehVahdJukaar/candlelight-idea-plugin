@@ -43,7 +43,14 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         set(value) {
             field = value
             cursor = value.cursor
+            onActiveToolChanged?.invoke(value)
         }
+
+    /**
+     * Invoked whenever [activeTool] changes (e.g. via a keyboard shortcut), after the cursor has
+     * been updated, so external UI such as the toolbar can reflect the newly active tool.
+     */
+    var onActiveToolChanged: ((Tool) -> Unit)? = null
 
     var currentColor: Color = JBColor.black
         private set
@@ -87,18 +94,53 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             }
         })
 
-        bindKey(KeyEvent.VK_0, 0, "fit") { fitToWindow() }
-        bindKey(KeyEvent.VK_1, 0, "actualSize") {
-            viewport.setZoom(1.0, width / 2.0, height / 2.0)
-            repaint()
-        }
-        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK, "undo") { document.undo() }
-        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK, "redo") { document.redo() }
-        bindKey(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK, "redo2") { document.redo() }
-        bindKey(KeyEvent.VK_ESCAPE, 0, "deselect") {
+        bindKeybindings()
+    }
+
+    /**
+     * Registers Photoshop-style keyboard shortcuts. Tool, zoom, undo/redo and deselect shortcuts are
+     * bound editor-wide ([WHEN_IN_FOCUSED_WINDOW]) so they fire even when the canvas does not hold
+     * keyboard focus (e.g. while the toolbar is focused).
+     */
+    private fun bindKeybindings() {
+        // ---- tool selection -----------------------------------------------------------------
+        bindKey(KeyEvent.VK_I, 0, "tool.pick", WHEN_IN_FOCUSED_WINDOW) { selectTool("pick") }
+        bindKey(KeyEvent.VK_M, 0, "tool.select", WHEN_IN_FOCUSED_WINDOW) { selectTool("select") }
+        bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_IN_FOCUSED_WINDOW) { selectTool("move") }
+        bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_IN_FOCUSED_WINDOW) { selectTool("pencil") }
+        bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_IN_FOCUSED_WINDOW) { selectTool("eraser") }
+
+        // ---- zoom ---------------------------------------------------------------------------
+        bindKey(KeyEvent.VK_0, 0, "fit", WHEN_IN_FOCUSED_WINDOW) { fitToWindow() }
+        bindKey(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK, "fit.ctrl", WHEN_IN_FOCUSED_WINDOW) { fitToWindow() }
+        bindKey(KeyEvent.VK_1, 0, "actualSize", WHEN_IN_FOCUSED_WINDOW) { actualSize() }
+        bindKey(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK, "actualSize.ctrl", WHEN_IN_FOCUSED_WINDOW) { actualSize() }
+        bindKey(KeyEvent.VK_PLUS, 0, "zoomIn", WHEN_IN_FOCUSED_WINDOW) { zoomAtCenter(ZOOM_STEP) }
+        bindKey(KeyEvent.VK_EQUALS, 0, "zoomIn2", WHEN_IN_FOCUSED_WINDOW) { zoomAtCenter(ZOOM_STEP) }
+        bindKey(KeyEvent.VK_MINUS, 0, "zoomOut", WHEN_IN_FOCUSED_WINDOW) { zoomAtCenter(1.0 / ZOOM_STEP) }
+
+        // ---- history & selection ------------------------------------------------------------
+        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK, "undo", WHEN_IN_FOCUSED_WINDOW) { document.undo() }
+        bindKey(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK, "redo", WHEN_IN_FOCUSED_WINDOW) { document.redo() }
+        bindKey(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK, "redo2", WHEN_IN_FOCUSED_WINDOW) { document.redo() }
+        bindKey(KeyEvent.VK_ESCAPE, 0, "deselect", WHEN_IN_FOCUSED_WINDOW) {
             document.selection = null
             repaint()
         }
+    }
+
+    private fun selectTool(id: String) {
+        activeTool = tools.first { it.id == id }
+    }
+
+    private fun actualSize() {
+        viewport.setZoom(1.0, width / 2.0, height / 2.0)
+        repaint()
+    }
+
+    private fun zoomAtCenter(factor: Double) {
+        viewport.zoomAt(width / 2.0, height / 2.0, factor)
+        repaint()
     }
 
     override fun addNotify() {
@@ -196,8 +238,13 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         g2.drawString(label, x + pad, y + pad / 2 + fm.ascent)
     }
 
-    private fun bindKey(keyCode: Int, modifiers: Int, name: String, action: () -> Unit) {
-        getInputMap(WHEN_FOCUSED).put(KeyStroke.getKeyStroke(keyCode, modifiers), name)
+    /**
+     * Binds [keyCode] + [modifiers] to [action]. [condition] selects the input map: pass
+     * [WHEN_IN_FOCUSED_WINDOW] to make the shortcut fire anywhere in the editor window, or the
+     * default [WHEN_FOCUSED] to require canvas focus.
+     */
+    private fun bindKey(keyCode: Int, modifiers: Int, name: String, condition: Int = WHEN_FOCUSED, action: () -> Unit) {
+        getInputMap(condition).put(KeyStroke.getKeyStroke(keyCode, modifiers), name)
         actionMap.put(name, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent) = action()
         })

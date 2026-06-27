@@ -29,6 +29,9 @@ class ImageDocument(source: BufferedImage) {
     val width: Int get() = image.width
     val height: Int get() = image.height
 
+    val canUndo: Boolean get() = undoStack.isNotEmpty()
+    val canRedo: Boolean get() = redoStack.isNotEmpty()
+
     // ---- history --------------------------------------------------------------------------------
 
     /** Records the current state so the next mutation can be undone. Call before a stroke/move. */

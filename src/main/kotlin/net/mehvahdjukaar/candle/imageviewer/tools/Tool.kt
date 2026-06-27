@@ -6,6 +6,7 @@ import java.awt.Color
 import java.awt.Cursor
 import java.awt.Graphics2D
 import java.awt.Point
+import javax.swing.Icon
 
 /**
  * Per-event state handed to a [Tool]: the model, the view transform, the mouse position already
@@ -34,6 +35,9 @@ interface Tool {
 
     /** Tooltip describing what the tool does. */
     val description: String
+
+    /** Toolbar glyph for this tool (programmatically drawn; see [ToolIcon]). */
+    val icon: Icon
 
     val cursor: Cursor get() = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
 

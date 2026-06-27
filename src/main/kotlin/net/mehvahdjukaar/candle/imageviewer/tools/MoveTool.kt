@@ -8,6 +8,7 @@ import java.awt.Point
 import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
+import javax.swing.Icon
 
 /**
  * Lifts the selected region (or the whole image if nothing is selected) and moves it. The pixels
@@ -19,6 +20,7 @@ class MoveTool : Tool {
     override val id = "move"
     override val displayName = "Move"
     override val description = "Move the selection, or the whole image if none"
+    override val icon: Icon = MoveIcon()
     override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
 
     private var floating: BufferedImage? = null
