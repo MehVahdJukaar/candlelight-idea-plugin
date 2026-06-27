@@ -116,7 +116,7 @@ class PaletteWidget : JPanel(BorderLayout()) {
     companion object {
         private const val SWATCH = 16
         private const val GAP = 2
-        private const val MAX_ROWS = 2
+        private const val MAX_ROWS = 3
     }
 }
 

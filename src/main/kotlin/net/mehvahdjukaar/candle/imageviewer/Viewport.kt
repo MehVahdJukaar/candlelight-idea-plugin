@@ -53,6 +53,29 @@ class Viewport {
         userInteracted = true
     }
 
+    /** Re-centers the image at the current zoom level within [componentW]x[componentH]. */
+    fun center(componentW: Int, componentH: Int, imageW: Int, imageH: Int) {
+        offsetX = (componentW - imageW * zoom) / 2.0
+        offsetY = (componentH - imageH * zoom) / 2.0
+        userInteracted = true
+    }
+
+    /**
+     * Keeps the image from being panned or zoomed entirely out of view by ensuring at least [margin]
+     * pixels of it always remain on-screen (or re-centers the axis if it can't fit the margin).
+     */
+    fun clamp(componentW: Int, componentH: Int, imageW: Int, imageH: Int, margin: Int) {
+        offsetX = clampAxis(offsetX, imageW * zoom, componentW, margin)
+        offsetY = clampAxis(offsetY, imageH * zoom, componentH, margin)
+    }
+
+    private fun clampAxis(offset: Double, imageSize: Double, componentSize: Int, margin: Int): Double {
+        val m = margin.toDouble()
+        val min = m - imageSize
+        val max = componentSize - m
+        return if (min <= max) offset.coerceIn(min, max) else (componentSize - imageSize) / 2.0
+    }
+
     /** Component coordinate -> image pixel coordinate (floored). May be out of the image bounds. */
     fun toImage(px: Int, py: Int): Point =
         Point(floor((px - offsetX) / zoom).toInt(), floor((py - offsetY) / zoom).toInt())

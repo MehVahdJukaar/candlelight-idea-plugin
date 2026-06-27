@@ -36,6 +36,7 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.JSlider
 import javax.swing.JToggleButton
 import javax.swing.KeyStroke
 import javax.swing.Scrollable
@@ -123,11 +124,22 @@ class ImageEditorPanel(
         content.add(grid(toolBtns, COLUMNS))
         content.add(Box.createVerticalStrut(JBUI.scale(8)))
 
+        content.add(sectionLabel("Brush size"))
+        content.add(leftAligned(buildBrushSlider()))
+        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+
         content.add(sectionLabel("Edit"))
         undoButton = actionButton(AllIcons.Actions.Undo, "Undo", "Ctrl+Z") { canvas.document.undo() }
         redoButton = actionButton(AllIcons.Actions.Redo, "Redo", "Ctrl+Shift+Z") { canvas.document.redo() }
         saveButton = actionButton(AllIcons.Actions.MenuSaveall, "Save", "Ctrl+S") { save() }
         content.add(grid(listOf(undoButton, redoButton, saveButton), COLUMNS))
+        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+
+        content.add(sectionLabel("View"))
+        val zoomOutBtn = actionButton(AllIcons.General.ZoomOut, "Zoom Out", "−") { canvas.zoomOut() }
+        val zoomInBtn = actionButton(AllIcons.General.ZoomIn, "Zoom In", "+") { canvas.zoomIn() }
+        val fitBtn = actionButton(AllIcons.General.FitContent, "Fit & Center", "0") { canvas.fitToWindow() }
+        content.add(grid(listOf(zoomOutBtn, zoomInBtn, fitBtn), COLUMNS))
 
         return JBScrollPane(
             content,
@@ -147,6 +159,26 @@ class ImageEditorPanel(
 
     /** Wraps [c] so it stays left-aligned and full-width inside the vertical [BoxLayout] dock. */
     private fun leftAligned(c: JComponent): JComponent = c.apply { alignmentX = Component.LEFT_ALIGNMENT }
+
+    /** Slider (1..max) that drives the pencil/eraser brush size, with a live "N px" readout. */
+    private fun buildBrushSlider(): JComponent {
+        val slider = JSlider(1, ImageCanvas.MAX_BRUSH, canvas.brushSize)
+        val value = JLabel("${canvas.brushSize} px").apply {
+            font = JBUI.Fonts.miniFont()
+            foreground = JBColor.GRAY
+        }
+        slider.addChangeListener {
+            canvas.brushSize = slider.value
+            value.text = "${slider.value} px"
+        }
+        return JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+            isOpaque = false
+            add(slider, BorderLayout.CENTER)
+            add(value, BorderLayout.EAST)
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+    }
 
     /** Lays [components] out left-to-right, [cols] per row, keeping their natural size. */
     private fun grid(components: List<JComponent>, cols: Int): JComponent = JPanel().apply {
@@ -378,7 +410,7 @@ class ImageEditorPanel(
 
         private val SHORTCUTS = mapOf(
             "pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E",
-            "recolor" to "G", "zoom" to "Z",
+            "recolor" to "G", "zoom" to "Z", "hand" to "H",
         )
 
         private val SAVED_COLOR = JBColor(Color(0x3C, 0x8B, 0x3C), Color(0x59, 0xA8, 0x69))

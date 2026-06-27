@@ -2,6 +2,7 @@ package net.mehvahdjukaar.candle.imageviewer
 
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorState
+import com.intellij.openapi.fileEditor.FileEditorStateLevel
 import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.components.JBLabel
@@ -59,6 +60,7 @@ class ImageViewerFileEditor(private val file: VirtualFile) : UserDataHolderBase(
     override fun getComponent(): JComponent = component
     override fun getPreferredFocusedComponent(): JComponent = focusComponent
     override fun getName(): String = "Image"
+    override fun getState(level: FileEditorStateLevel): FileEditorState = FileEditorState.INSTANCE
     override fun setState(state: FileEditorState) {}
     override fun isModified(): Boolean = modified
     override fun isValid(): Boolean = file.isValid

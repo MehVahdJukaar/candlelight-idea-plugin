@@ -26,6 +26,7 @@ object ToolIcons {
     val ERASER: Icon = load("eraser")
     val ZOOM: Icon = load("zoom")
     val RECOLOR: Icon = load("recolor")
+    val HAND: Icon = load("hand")
 
     private fun load(name: String): Icon = IconLoader.getIcon("/icons/imageviewer/$name.svg", javaClass)
 }
@@ -79,6 +80,17 @@ internal fun drawEraserGlyph(g: Graphics2D) {
     g.draw(Line2D.Float(5.0f, 10.0f, 11.5f, 3.5f))
     g.draw(Line2D.Float(7.0f, 8.0f, 9.5f, 10.5f))
     g.draw(Line2D.Float(3.0f, 13.5f, 5.5f, 13.5f))
+}
+
+/** Open hand: a rounded palm with four fingers and a thumb, centered around (~8, 8). */
+internal fun drawHandGlyph(g: Graphics2D) {
+    g.stroke = thin(1.2f)
+    g.draw(java.awt.geom.RoundRectangle2D.Float(4.5f, 7.5f, 7.5f, 6.5f, 4f, 4f))
+    g.draw(Line2D.Float(5.5f, 7.5f, 5.5f, 4.5f))
+    g.draw(Line2D.Float(7.5f, 7.5f, 7.5f, 3.5f))
+    g.draw(Line2D.Float(9.5f, 7.5f, 9.5f, 3.5f))
+    g.draw(Line2D.Float(11.0f, 7.5f, 11.0f, 4.5f))
+    g.draw(Line2D.Float(4.6f, 9.0f, 2.8f, 10.5f))
 }
 
 /** Magnifier: a lens centered around (~7, 7) with a handle to the bottom-right and a small plus. */
