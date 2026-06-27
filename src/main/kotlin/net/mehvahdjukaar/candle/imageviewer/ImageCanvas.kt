@@ -6,6 +6,7 @@ import com.intellij.util.ui.UIUtil
 import net.mehvahdjukaar.candle.imageviewer.tools.EyedropperTool
 import net.mehvahdjukaar.candle.imageviewer.tools.MoveTool
 import net.mehvahdjukaar.candle.imageviewer.tools.PencilTool
+import net.mehvahdjukaar.candle.imageviewer.tools.RecolorTool
 import net.mehvahdjukaar.candle.imageviewer.tools.SelectTool
 import net.mehvahdjukaar.candle.imageviewer.tools.Tool
 import net.mehvahdjukaar.candle.imageviewer.tools.ToolContext
@@ -39,7 +40,8 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     private val viewport = Viewport()
 
     val tools: List<Tool> = listOf(
-        EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true), ZoomTool(),
+        EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true),
+        RecolorTool(), ZoomTool(),
     )
 
     var activeTool: Tool = tools.first { it.id == "pencil" }
@@ -112,6 +114,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_IN_FOCUSED_WINDOW) { selectTool("move") }
         bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_IN_FOCUSED_WINDOW) { selectTool("pencil") }
         bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_IN_FOCUSED_WINDOW) { selectTool("eraser") }
+        bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_IN_FOCUSED_WINDOW) { selectTool("recolor") }
         bindKey(KeyEvent.VK_Z, 0, "tool.zoom", WHEN_IN_FOCUSED_WINDOW) { selectTool("zoom") }
 
         // ---- zoom ---------------------------------------------------------------------------

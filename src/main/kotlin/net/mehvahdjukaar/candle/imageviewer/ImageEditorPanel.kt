@@ -376,7 +376,10 @@ class ImageEditorPanel(
         private const val MAX_PALETTE = 48
         private const val MAX_SCAN = 200_000L
 
-        private val SHORTCUTS = mapOf("pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E", "zoom" to "Z")
+        private val SHORTCUTS = mapOf(
+            "pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E",
+            "recolor" to "G", "zoom" to "Z",
+        )
 
         private val SAVED_COLOR = JBColor(Color(0x3C, 0x8B, 0x3C), Color(0x59, 0xA8, 0x69))
         private val UNSAVED_COLOR = JBColor(Color(0xB8, 0x6A, 0x00), Color(0xD8, 0x95, 0x16))
