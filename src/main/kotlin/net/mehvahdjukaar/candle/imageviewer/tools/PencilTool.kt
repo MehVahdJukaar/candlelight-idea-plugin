@@ -14,7 +14,7 @@ class PencilTool(private val erase: Boolean) : Tool {
     override val displayName = if (erase) "Eraser" else "Pencil"
     override val description =
         if (erase) "Erase pixels to transparent" else "Draw single pixels with the foreground color"
-    override val icon: Icon = if (erase) EraserIcon() else PencilIcon()
+    override val icon: Icon = if (erase) ToolIcons.ERASER else ToolIcons.PENCIL
     override val cursor: Cursor = if (erase) ToolCursors.eraser() else ToolCursors.pencil()
 
     private var last: Point? = null

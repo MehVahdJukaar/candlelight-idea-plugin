@@ -20,7 +20,7 @@ class MoveTool : Tool {
     override val id = "move"
     override val displayName = "Move"
     override val description = "Move the selection, or the whole image if none"
-    override val icon: Icon = MoveIcon()
+    override val icon: Icon = ToolIcons.MOVE
     override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
 
     private var floating: BufferedImage? = null
