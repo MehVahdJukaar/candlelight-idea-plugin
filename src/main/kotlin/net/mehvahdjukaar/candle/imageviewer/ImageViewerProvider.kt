@@ -19,7 +19,7 @@ class ImageViewerProvider : FileEditorProvider, DumbAware {
         file.extension?.lowercase() in SUPPORTED_EXTENSIONS
 
     override fun createEditor(project: Project, file: VirtualFile): FileEditor =
-        ImageViewerFileEditor(file)
+        ImageViewerFileEditor(project, file)
 
     override fun getEditorTypeId(): String = "candle-image-viewer"
 

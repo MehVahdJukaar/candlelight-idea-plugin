@@ -36,13 +36,18 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     /** Fired when the user changes the color (not when it is set programmatically). */
     var onColorChanged: ((Color) -> Unit)? = null
 
-    val color: Color get() = Color.getHSBColor(hue, sat, bri)
+    val color: Color
+        get() {
+            val c = Color.getHSBColor(hue, sat, bri)
+            return Color(c.red, c.green, c.blue, alpha)
+        }
 
     private enum class Mode { RGB, HSB }
 
     private var hue = 0f
     private var sat = 0f
     private var bri = 0f
+    private var alpha = 255
     private var mode = Mode.RGB
     private var updating = false
 
@@ -54,6 +59,11 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     private val channelLabels = List(3) { smallLabel() }
     private val valueLabels = List(3) { smallLabel().apply { preferredSize = Dimension(JBUI.scale(24), preferredSize.height) } }
     private val channelSliders = List(3) { ChannelSlider() }
+
+    // Alpha is independent of the RGB/HSB mode, so it gets its own permanent row below the channels.
+    private val alphaLabel = smallLabel()
+    private val alphaValue = smallLabel().apply { preferredSize = Dimension(JBUI.scale(24), preferredSize.height) }
+    private val alphaSlider = ChannelSlider()
 
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -71,6 +81,21 @@ class ColorPickerWidget(initial: Color) : JPanel() {
         rgbToggle.addActionListener { setMode(Mode.RGB) }
         hsbToggle.addActionListener { setMode(Mode.HSB) }
 
+        alphaLabel.text = "A"
+        alphaSlider.checkerboard = true
+        // The track fades the current color from transparent to opaque, over a checkerboard.
+        alphaSlider.trackGradient = { f ->
+            val c = Color.getHSBColor(hue, sat, bri)
+            Color(c.red, c.green, c.blue, (f * 255).roundToInt())
+        }
+        alphaSlider.onChange = {
+            if (!updating) {
+                alpha = (alphaSlider.fraction * 255).roundToInt()
+                refresh()
+                emit()
+            }
+        }
+
         add(square)
         add(Box.createVerticalStrut(JBUI.scale(4)))
         add(hueSlider)
@@ -81,9 +106,10 @@ class ColorPickerWidget(initial: Color) : JPanel() {
             add(buildChannelRow(i))
             add(Box.createVerticalStrut(JBUI.scale(3)))
         }
+        add(buildAlphaRow())
 
         val hsb = Color.RGBtoHSB(initial.red, initial.green, initial.blue, null)
-        hue = hsb[0]; sat = hsb[1]; bri = hsb[2]
+        hue = hsb[0]; sat = hsb[1]; bri = hsb[2]; alpha = initial.alpha
         refresh()
     }
 
@@ -95,7 +121,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     fun setColorExternally(c: Color) {
         if (c.rgb == color.rgb) return // ignore our own echo so dragging the square doesn't jump
         val hsb = Color.RGBtoHSB(c.red, c.green, c.blue, null)
-        hue = hsb[0]; sat = hsb[1]; bri = hsb[2]
+        hue = hsb[0]; sat = hsb[1]; bri = hsb[2]; alpha = c.alpha
         refresh()
     }
 
@@ -124,6 +150,15 @@ class ColorPickerWidget(initial: Color) : JPanel() {
             add(channelLabels[index], BorderLayout.WEST)
             add(channelSliders[index], BorderLayout.CENTER)
             add(valueLabels[index], BorderLayout.EAST)
+        }
+
+    private fun buildAlphaRow(): JComponent =
+        JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
+            alignmentX = Component.LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(14))
+            add(alphaLabel, BorderLayout.WEST)
+            add(alphaSlider, BorderLayout.CENTER)
+            add(alphaValue, BorderLayout.EAST)
         }
 
     private fun setMode(newMode: Mode) {
@@ -157,6 +192,10 @@ class ColorPickerWidget(initial: Color) : JPanel() {
         hueSlider.fraction = hue.toDouble()
         square.repaint()
         preview.repaint()
+
+        alphaSlider.fraction = alpha / 255.0
+        alphaSlider.repaint() // the track gradient tracks the current color, so refresh it too
+        alphaValue.text = alpha.toString()
 
         val letters = if (mode == Mode.RGB) RGB_LETTERS else HSB_LETTERS
         val rgb = color
@@ -194,9 +233,9 @@ class ColorPickerWidget(initial: Color) : JPanel() {
             addMouseMotionListener(mouse)
         }
 
-        override fun getPreferredSize() = Dimension(JBUI.scale(120), JBUI.scale(92))
-        override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(92))
-        override fun getMinimumSize() = Dimension(JBUI.scale(40), JBUI.scale(92))
+        override fun getPreferredSize() = Dimension(JBUI.scale(120), JBUI.scale(108))
+        override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(108))
+        override fun getMinimumSize() = Dimension(JBUI.scale(40), JBUI.scale(108))
 
         private fun pick(e: MouseEvent) {
             if (updating) return
@@ -260,6 +299,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
             }
 
         var trackGradient: ((Double) -> Color)? = null
+        var checkerboard = false
         var onChange: () -> Unit = {}
 
         init {
@@ -295,6 +335,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
 
                 val gradient = trackGradient
                 if (gradient != null) {
+                    if (checkerboard) CanvasRender.checkerboard(g2, Rectangle(trackX, trackY, trackW, trackH))
                     for (i in 0 until trackW) {
                         g2.color = gradient(i.toDouble() / trackW)
                         g2.fillRect(trackX + i, trackY, 1, trackH)

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "net.mehvahdjukaar"
-version = "1.8.5"
+version = "1.8.9"
 
 repositories {
     mavenCentral()
