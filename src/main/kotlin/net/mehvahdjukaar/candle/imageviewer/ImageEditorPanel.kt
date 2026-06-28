@@ -4,7 +4,10 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CompositeShortcutSet
+import com.intellij.openapi.actionSystem.CustomShortcutSet
 import com.intellij.openapi.actionSystem.IdeActions
+import com.intellij.openapi.actionSystem.ShortcutSet
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.ui.Messages
@@ -24,6 +27,8 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
+import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -39,6 +44,7 @@ import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JSlider
 import javax.swing.JToggleButton
+import javax.swing.KeyStroke
 import javax.swing.Scrollable
 import javax.swing.ScrollPaneConstants
 import javax.swing.Timer
@@ -74,6 +80,9 @@ class ImageEditorPanel(
 
     private var dirty = false
 
+    // Pixels of the last-saved state, so we can tell when edits (or undos) return the image to it.
+    private var savedSnapshot: IntArray = snapshotOf(canvas.document.image)
+
     val preferredFocus: JComponent get() = canvas
 
     init {
@@ -106,14 +115,22 @@ class ImageEditorPanel(
      * Ctrl+Z undoes the last pixel edit instead of being swallowed by the platform's editor undo.
      */
     private fun registerIdeActions() {
-        bindIdeShortcut(IdeActions.ACTION_UNDO, { canvas.document.canUndo }) { canvas.document.undo() }
-        bindIdeShortcut(IdeActions.ACTION_REDO, { canvas.document.canRedo }) { canvas.document.redo() }
-        // No IdeActions constant for Save All; its action id is the literal "SaveAll".
-        bindIdeShortcut("SaveAll", { dirty }) { save() }
+        ActionManager.getInstance().getAction(IdeActions.ACTION_UNDO)?.shortcutSet?.let {
+            bindShortcut(it, { canvas.document.canUndo }) { canvas.document.undo() }
+        }
+        ActionManager.getInstance().getAction(IdeActions.ACTION_REDO)?.shortcutSet?.let {
+            bindShortcut(it, { canvas.document.canRedo }) { canvas.document.redo() }
+        }
+        // Bind Ctrl+S explicitly: the IDE's "Save All" action has no default keymap shortcut
+        // (autosave makes it unnecessary), so relying on its shortcutSet would bind nothing.
+        // Merge in whatever the user may have assigned to Save All, just in case.
+        val ctrlS = CustomShortcutSet(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK))
+        val saveShortcuts = ActionManager.getInstance().getAction("SaveAll")?.shortcutSet
+        val merged = if (saveShortcuts != null) CompositeShortcutSet(ctrlS, saveShortcuts) else ctrlS
+        bindShortcut(merged, { dirty }) { save() }
     }
 
-    private fun bindIdeShortcut(actionId: String, enabled: () -> Boolean, run: () -> Unit) {
-        val shortcuts = ActionManager.getInstance().getAction(actionId)?.shortcutSet ?: return
+    private fun bindShortcut(shortcuts: ShortcutSet, enabled: () -> Boolean, run: () -> Unit) {
         object : DumbAwareAction() {
             override fun actionPerformed(e: AnActionEvent) = run()
             override fun update(e: AnActionEvent) {
@@ -185,7 +202,7 @@ class ImageEditorPanel(
     /** Slider (1..max) that drives the pencil/eraser brush size, with a live "N px" readout. */
     private fun buildBrushSlider(): JComponent {
         val slider = JSlider(1, ImageCanvas.MAX_BRUSH, canvas.brushSize)
-        slider.toolTipText = "Brush size  ([ and ], or Alt+scroll)"
+        slider.toolTipText = "Brush size  ([ and ], or Alt+right-drag)"
         val value = JLabel("${canvas.brushSize} px").apply {
             font = JBUI.Fonts.miniFont()
             foreground = JBColor.GRAY
@@ -307,9 +324,20 @@ class ImageEditorPanel(
     // ---- save / dirty state ---------------------------------------------------------------------
 
     private fun onContentEdited() {
-        updateSaveState(clean = false)
+        // An edit can also bring the image back to the saved state (e.g. undoing every change),
+        // so derive dirtiness by comparing against the saved snapshot rather than latching it true.
+        updateSaveState(clean = matchesSaved())
         refreshHistoryButtons()
         paletteTimer.restart()
+    }
+
+    private fun snapshotOf(img: BufferedImage): IntArray =
+        img.getRGB(0, 0, img.width, img.height, null, 0, img.width)
+
+    private fun matchesSaved(): Boolean {
+        val img = canvas.document.image
+        if (img.width * img.height != savedSnapshot.size) return false
+        return snapshotOf(img).contentEquals(savedSnapshot)
     }
 
     private fun refreshHistoryButtons() {
@@ -330,7 +358,13 @@ class ImageEditorPanel(
         statusLabel.foreground = if (dirty) UNSAVED_COLOR else JBColor.GRAY
     }
 
-    private fun save() {
+    /** Whether there are unsaved pixel edits. */
+    val hasUnsavedChanges: Boolean get() = dirty
+
+    /** Saves the current image to disk. Returns true on success. Safe to call from outside the panel. */
+    fun saveNow(): Boolean = save()
+
+    private fun save(): Boolean {
         try {
             val ext = file.extension?.lowercase()
             val format = when (ext) {
@@ -344,14 +378,17 @@ class ImageEditorPanel(
             val bytes = ByteArrayOutputStream().use { stream ->
                 if (!ImageIO.write(out, format, stream)) {
                     Messages.showErrorDialog(this, "No image encoder for .$ext files.", "Save Image")
-                    return
+                    return false
                 }
                 stream.toByteArray()
             }
             WriteAction.run<IOException> { file.setBinaryContent(bytes) }
+            savedSnapshot = snapshotOf(canvas.document.image)
             updateSaveState(clean = true)
+            return true
         } catch (t: Throwable) {
             Messages.showErrorDialog(this, t.message ?: "Failed to save image.", "Save Image")
+            return false
         }
     }
 

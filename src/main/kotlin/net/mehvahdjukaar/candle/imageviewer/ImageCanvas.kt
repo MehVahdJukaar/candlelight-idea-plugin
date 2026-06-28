@@ -94,6 +94,11 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     /** The tool locked in at mouse-press, so a mid-stroke modifier flip can't switch tools. */
     private var strokeTool: Tool? = null
 
+    /** Active while Alt + right-drag is resizing the brush, Photoshop-style; null otherwise. */
+    private var brushResize: BrushResize? = null
+
+    private class BrushResize(val anchor: Point, val startSize: Int)
+
     init {
         isOpaque = true
         isFocusable = true
@@ -107,15 +112,20 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         val mouse = object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent) {
                 requestFocusInWindow()
+                if (tryStartBrushResize(e)) return
                 onPress(e)
             }
 
             override fun mouseDragged(e: MouseEvent) {
+                if (brushResize != null) { updateBrushResize(e); return }
                 hoverPoint = e.point
                 onDrag(e)
             }
 
-            override fun mouseReleased(e: MouseEvent) = onRelease(e)
+            override fun mouseReleased(e: MouseEvent) {
+                if (brushResize != null) { brushResize = null; repaint(); return }
+                onRelease(e)
+            }
 
             override fun mouseMoved(e: MouseEvent) {
                 hoverPoint = e.point
@@ -159,11 +169,6 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         })
 
         addMouseWheelListener { e ->
-            if (e.isAltDown) {
-                // Alt + wheel resizes the brush (wheel up = larger), matching many pixel editors.
-                if (e.wheelRotation != 0) brushSize -= e.wheelRotation
-                return@addMouseWheelListener
-            }
             if (e.isShiftDown) {
                 // Shift + wheel pans horizontally, matching most image editors.
                 viewport.pan(-e.preciseWheelRotation * WHEEL_PAN_STEP, 0.0)
@@ -188,33 +193,34 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
     /**
      * Registers Photoshop-style keyboard shortcuts. Tool, zoom, brush-size and deselect shortcuts are
-     * bound editor-wide ([WHEN_IN_FOCUSED_WINDOW]) so they fire even when the canvas does not hold
-     * keyboard focus (e.g. while the toolbar is focused). Undo/redo/save use real IDE shortcuts and
-     * are registered separately by [ImageEditorPanel] so they take precedence over the platform.
+     * scoped to [WHEN_ANCESTOR_OF_FOCUSED_COMPONENT] so they fire whenever focus is inside this image
+     * editor but never leak to other editor tabs that merely share the window (a plain `m` typed in a
+     * code tab must not switch this editor's tool). Undo/redo/save use real IDE shortcuts and are
+     * registered separately by [ImageEditorPanel] so they take precedence over the platform.
      */
     private fun bindKeybindings() {
         // ---- tool selection -----------------------------------------------------------------
-        bindKey(KeyEvent.VK_I, 0, "tool.pick", WHEN_IN_FOCUSED_WINDOW) { selectTool("pick") }
-        bindKey(KeyEvent.VK_M, 0, "tool.select", WHEN_IN_FOCUSED_WINDOW) { selectTool("select") }
-        bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_IN_FOCUSED_WINDOW) { selectTool("move") }
-        bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_IN_FOCUSED_WINDOW) { selectTool("pencil") }
-        bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_IN_FOCUSED_WINDOW) { selectTool("eraser") }
-        bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_IN_FOCUSED_WINDOW) { selectTool("recolor") }
-        bindKey(KeyEvent.VK_Z, 0, "tool.zoom", WHEN_IN_FOCUSED_WINDOW) { selectTool("zoom") }
-        bindKey(KeyEvent.VK_H, 0, "tool.hand", WHEN_IN_FOCUSED_WINDOW) { selectTool("hand") }
+        bindKey(KeyEvent.VK_I, 0, "tool.pick", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pick") }
+        bindKey(KeyEvent.VK_M, 0, "tool.select", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("select") }
+        bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("move") }
+        bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pencil") }
+        bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("eraser") }
+        bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("recolor") }
+        bindKey(KeyEvent.VK_Z, 0, "tool.zoom", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("zoom") }
+        bindKey(KeyEvent.VK_H, 0, "tool.hand", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("hand") }
 
         // ---- brush size ---------------------------------------------------------------------
-        bindKey(KeyEvent.VK_OPEN_BRACKET, 0, "brush.smaller", WHEN_IN_FOCUSED_WINDOW) { brushSize-- }
-        bindKey(KeyEvent.VK_CLOSE_BRACKET, 0, "brush.larger", WHEN_IN_FOCUSED_WINDOW) { brushSize++ }
+        bindKey(KeyEvent.VK_OPEN_BRACKET, 0, "brush.smaller", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { brushSize-- }
+        bindKey(KeyEvent.VK_CLOSE_BRACKET, 0, "brush.larger", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { brushSize++ }
 
         // ---- zoom ---------------------------------------------------------------------------
-        bindKey(KeyEvent.VK_0, 0, "fit", WHEN_IN_FOCUSED_WINDOW) { fitToWindow() }
-        bindKey(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK, "fit.ctrl", WHEN_IN_FOCUSED_WINDOW) { fitToWindow() }
-        bindKey(KeyEvent.VK_1, 0, "actualSize", WHEN_IN_FOCUSED_WINDOW) { actualSize() }
-        bindKey(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK, "actualSize.ctrl", WHEN_IN_FOCUSED_WINDOW) { actualSize() }
-        bindKey(KeyEvent.VK_PLUS, 0, "zoomIn", WHEN_IN_FOCUSED_WINDOW) { zoomAtCenter(ZOOM_STEP) }
-        bindKey(KeyEvent.VK_EQUALS, 0, "zoomIn2", WHEN_IN_FOCUSED_WINDOW) { zoomAtCenter(ZOOM_STEP) }
-        bindKey(KeyEvent.VK_MINUS, 0, "zoomOut", WHEN_IN_FOCUSED_WINDOW) { zoomAtCenter(1.0 / ZOOM_STEP) }
+        bindKey(KeyEvent.VK_0, 0, "fit", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { fitToWindow() }
+        bindKey(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK, "fit.ctrl", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { fitToWindow() }
+        bindKey(KeyEvent.VK_1, 0, "actualSize", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { actualSize() }
+        bindKey(KeyEvent.VK_1, InputEvent.CTRL_DOWN_MASK, "actualSize.ctrl", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { actualSize() }
+        bindKey(KeyEvent.VK_PLUS, 0, "zoomIn", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { zoomAtCenter(ZOOM_STEP) }
+        bindKey(KeyEvent.VK_EQUALS, 0, "zoomIn2", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { zoomAtCenter(ZOOM_STEP) }
+        bindKey(KeyEvent.VK_MINUS, 0, "zoomOut", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { zoomAtCenter(1.0 / ZOOM_STEP) }
 
         // ---- pan & recenter -----------------------------------------------------------------
         val step = JBUI.scale(PAN_STEP)
@@ -222,10 +228,10 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         bindKey(KeyEvent.VK_RIGHT, 0, "pan.right") { pan(-step, 0) }
         bindKey(KeyEvent.VK_UP, 0, "pan.up") { pan(0, step) }
         bindKey(KeyEvent.VK_DOWN, 0, "pan.down") { pan(0, -step) }
-        bindKey(KeyEvent.VK_HOME, 0, "recenter", WHEN_IN_FOCUSED_WINDOW) { recenter() }
+        bindKey(KeyEvent.VK_HOME, 0, "recenter", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { recenter() }
 
         // ---- selection ----------------------------------------------------------------------
-        bindKey(KeyEvent.VK_ESCAPE, 0, "deselect", WHEN_IN_FOCUSED_WINDOW) {
+        bindKey(KeyEvent.VK_ESCAPE, 0, "deselect", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
             document.selection = null
             repaint()
         }
@@ -303,6 +309,24 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     private fun toolContext(e: MouseEvent) =
         ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, currentColor, ::setCurrentColor)
 
+    /**
+     * Starts the Photoshop-style brush resize gesture: Alt + right-drag over a paint tool. Dragging
+     * right grows the brush, left shrinks it; the outline previews at the anchor while resizing.
+     */
+    private fun tryStartBrushResize(e: MouseEvent): Boolean {
+        if (!SwingUtilities.isRightMouseButton(e) || !e.isAltDown || activeTool !is PencilTool) return false
+        brushResize = BrushResize(e.point, brushSize)
+        hoverPoint = e.point
+        repaint()
+        return true
+    }
+
+    private fun updateBrushResize(e: MouseEvent) {
+        val gesture = brushResize ?: return
+        val steps = ((e.x - gesture.anchor.x).toFloat() / JBUI.scale(BRUSH_DRAG_PX)).roundToInt()
+        brushSize = gesture.startSize + steps
+    }
+
     private fun onPress(e: MouseEvent) {
         if (SwingUtilities.isMiddleMouseButton(e) || (spacePanning && SwingUtilities.isLeftMouseButton(e))) {
             panLast = e.point
@@ -359,7 +383,8 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             g2.color = JBColor.border()
             g2.drawRect(imageRect.x, imageRect.y, imageRect.width, imageRect.height)
 
-            val previewTool = toolFor(altSampling)
+            // While resizing show the active paint tool's outline, not the Alt-sampling eyedropper.
+            val previewTool = if (brushResize != null) activeTool else toolFor(altSampling)
             previewTool.paintOverlay(g2, viewport)
             // The brush-outline hover preview is meaningless while the space-pan grab is active.
             if (!spacePanning) hoverPoint?.let { previewTool.paintHover(g2, viewport, viewport.toImage(it.x, it.y)) }
@@ -389,8 +414,8 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
     /**
      * Binds [keyCode] + [modifiers] to [action]. [condition] selects the input map: pass
-     * [WHEN_IN_FOCUSED_WINDOW] to make the shortcut fire anywhere in the editor window, or the
-     * default [WHEN_FOCUSED] to require canvas focus.
+     * [WHEN_ANCESTOR_OF_FOCUSED_COMPONENT] to fire whenever focus is inside the editor (without
+     * leaking to other tabs), or the default [WHEN_FOCUSED] to require canvas focus specifically.
      */
     private fun bindKey(keyCode: Int, modifiers: Int, name: String, condition: Int = WHEN_FOCUSED, action: () -> Unit) {
         getInputMap(condition).put(KeyStroke.getKeyStroke(keyCode, modifiers), name)
@@ -415,5 +440,8 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
         // Largest square-brush side length the size slider allows.
         const val MAX_BRUSH = 32
+
+        // Pixels of Alt+right-drag travel per one step of brush-size change.
+        private const val BRUSH_DRAG_PX = 6
     }
 }
