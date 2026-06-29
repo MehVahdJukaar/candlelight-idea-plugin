@@ -75,6 +75,9 @@ class ImageEditorPanel(
     private lateinit var undoButton: JButton
     private lateinit var redoButton: JButton
     private lateinit var saveButton: JButton
+    private lateinit var copyButton: JButton
+    private lateinit var cutButton: JButton
+    private lateinit var pasteButton: JButton
 
     private lateinit var playButton: FlatActionButton
     private lateinit var frameSlider: JSlider
@@ -104,6 +107,7 @@ class ImageEditorPanel(
     init {
         canvas.colorListener = { colorPicker.setColorExternally(it) }
         canvas.editListener = { onContentEdited() }
+        canvas.selectionListener = { refreshEditButtons() }
         canvas.onActiveToolChanged = { tool -> toolButtons[tool]?.isSelected = true }
         canvas.onAnimationChanged = { current, count -> syncAnimationControls(current, count) }
         canvas.onPlayStateChanged = { playing -> updatePlayButton(playing) }
@@ -120,7 +124,7 @@ class ImageEditorPanel(
 
         registerIdeActions()
 
-        refreshHistoryButtons()
+        refreshEditButtons()
         updateSaveState(clean = true)
         refreshPalette()
     }
@@ -138,6 +142,15 @@ class ImageEditorPanel(
         }
         ActionManager.getInstance().getAction(IdeActions.ACTION_REDO)?.shortcutSet?.let {
             bindShortcut(it, { canvas.document.canRedo }) { canvas.document.redo() }
+        }
+        ActionManager.getInstance().getAction(IdeActions.ACTION_COPY)?.shortcutSet?.let {
+            bindShortcut(it, { canvas.hasSelection }) { canvas.copySelection() }
+        }
+        ActionManager.getInstance().getAction(IdeActions.ACTION_CUT)?.shortcutSet?.let {
+            bindShortcut(it, { canvas.hasSelection }) { canvas.cutSelection() }
+        }
+        ActionManager.getInstance().getAction(IdeActions.ACTION_PASTE)?.shortcutSet?.let {
+            bindShortcut(it, { canvas.canPaste }) { canvas.paste() }
         }
         // Bind Ctrl+S explicitly: the IDE's "Save All" action has no default keymap shortcut
         // (autosave makes it unnecessary), so relying on its shortcutSet would bind nothing.
@@ -192,7 +205,10 @@ class ImageEditorPanel(
         undoButton = actionButton(AllIcons.Actions.Undo, "Undo", "Ctrl+Z") { canvas.document.undo() }
         redoButton = actionButton(AllIcons.Actions.Redo, "Redo", "Ctrl+Shift+Z") { canvas.document.redo() }
         saveButton = actionButton(AllIcons.Actions.MenuSaveall, "Save", "Ctrl+S") { save() }
-        content.add(grid(listOf(undoButton, redoButton, saveButton), COLUMNS))
+        copyButton = actionButton(AllIcons.Actions.Copy, "Copy", "Ctrl+C") { canvas.copySelection() }
+        cutButton = actionButton(AllIcons.Actions.MenuCut, "Cut", "Ctrl+X") { canvas.cutSelection() }
+        pasteButton = actionButton(AllIcons.Actions.MenuPaste, "Paste", "Ctrl+V") { canvas.paste() }
+        content.add(grid(listOf(undoButton, redoButton, saveButton, copyButton, cutButton, pasteButton), COLUMNS))
         content.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         content.add(sectionLabel("View"))
@@ -294,17 +310,17 @@ class ImageEditorPanel(
             isEnabled = !readOnly
             addChangeListener { if (!updatingAnim) canvas.setFrameCount(value as Int) }
         }
-        val framesRow = animRow(frameCountSpinner, animLabel("Frames"))
+        // Auto-detect (assume square frames) shares the frames row as an icon: it sets the frame count.
+        val autoButton = actionButton(AllIcons.Actions.Lightning, "Auto-detect frames", "") {
+            canvas.autoDetectFrames()
+        }.apply { isEnabled = !readOnly }
+        val framesRow = animRow(frameCountSpinner, autoButton, animLabel("Frames"))
 
         durationSpinner = compactSpinner(SpinnerNumberModel(anim.frameDurationTicks, 1, Animation.MAX_DURATION_TICKS, 1)).apply {
             toolTipText = "Ticks each frame is shown (20 ticks = 1 second)"
             addChangeListener { if (!updatingAnim) canvas.setFrameDuration(value as Int) }
         }
-        // Auto-detect (assume square frames) lives here as an icon, sharing the speed row.
-        val autoButton = actionButton(AllIcons.Actions.Lightning, "Auto-detect frames", "") {
-            canvas.autoDetectFrames()
-        }.apply { isEnabled = !readOnly }
-        val durationRow = animRow(durationSpinner, autoButton, animLabel("Speed"))
+        val durationRow = animRow(durationSpinner, animLabel("Speed"))
 
         updatePlayButton(playing = false)
         syncAnimationControls(anim.currentFrame, anim.frameCount)
@@ -469,7 +485,7 @@ class ImageEditorPanel(
         // An edit can also bring the image back to the saved state (e.g. undoing every change),
         // so derive dirtiness by comparing against the saved snapshot rather than latching it true.
         updateSaveState(clean = matchesSaved())
-        refreshHistoryButtons()
+        refreshEditButtons()
         paletteTimer.restart()
     }
 
@@ -482,9 +498,12 @@ class ImageEditorPanel(
         return snapshotOf(img).contentEquals(savedSnapshot)
     }
 
-    private fun refreshHistoryButtons() {
+    private fun refreshEditButtons() {
         undoButton.isEnabled = canvas.document.canUndo
         redoButton.isEnabled = canvas.document.canRedo
+        copyButton.isEnabled = canvas.hasSelection
+        cutButton.isEnabled = canvas.hasSelection
+        pasteButton.isEnabled = canvas.canPaste
     }
 
     private fun updateSaveState(clean: Boolean) {
