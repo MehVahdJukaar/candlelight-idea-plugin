@@ -49,6 +49,12 @@ interface Tool {
      */
     val altPicksColor: Boolean get() = false
 
+    /**
+     * True if the OS cursor should be hidden while this tool is active over the canvas, because the
+     * tool already draws its own pointer (e.g. the brush outline from [paintHover]).
+     */
+    val hidesCursor: Boolean get() = false
+
     fun onPress(ctx: ToolContext) {}
     fun onDrag(ctx: ToolContext) {}
     fun onRelease(ctx: ToolContext) {}

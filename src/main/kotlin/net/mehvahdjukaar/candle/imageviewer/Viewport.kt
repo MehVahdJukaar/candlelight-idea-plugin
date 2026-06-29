@@ -60,6 +60,28 @@ class Viewport {
         userInteracted = true
     }
 
+    /** Pans (without zooming) so the image point ([imageX], [imageY]) sits at the component center. */
+    fun focusOn(componentW: Int, componentH: Int, imageX: Double, imageY: Double) {
+        offsetX = componentW / 2.0 - imageX * zoom
+        offsetY = componentH / 2.0 - imageY * zoom
+        userInteracted = true
+    }
+
+    /**
+     * Zooms so [region] fills the component (scaled by [scale] for a margin) and centers it. Used to
+     * focus a single animation frame; counts as an auto-fit so a later resize can re-fit cleanly.
+     */
+    fun fitRegion(componentW: Int, componentH: Int, region: Rectangle, scale: Double = 1.0) {
+        val cw = componentW.coerceAtLeast(1)
+        val ch = componentH.coerceAtLeast(1)
+        val w = region.width.coerceAtLeast(1)
+        val h = region.height.coerceAtLeast(1)
+        zoom = (min(cw.toDouble() / w, ch.toDouble() / h) * scale).coerceIn(MIN_ZOOM, MAX_ZOOM)
+        offsetX = cw / 2.0 - (region.x + w / 2.0) * zoom
+        offsetY = ch / 2.0 - (region.y + h / 2.0) * zoom
+        userInteracted = false
+    }
+
     /**
      * Keeps the image from being panned or zoomed entirely out of view by ensuring at least [margin]
      * pixels of it always remain on-screen (or re-centers the axis if it can't fit the margin).

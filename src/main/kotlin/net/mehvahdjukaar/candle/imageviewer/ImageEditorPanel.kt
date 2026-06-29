@@ -43,10 +43,12 @@ import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JSlider
+import javax.swing.JSpinner
 import javax.swing.JToggleButton
 import javax.swing.KeyStroke
-import javax.swing.Scrollable
 import javax.swing.ScrollPaneConstants
+import javax.swing.Scrollable
+import javax.swing.SpinnerNumberModel
 import javax.swing.Timer
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -59,15 +61,29 @@ import kotlin.math.sqrt
 class ImageEditorPanel(
     private val file: VirtualFile,
     image: BufferedImage,
+    initialFrames: Int = 1,
+    initialDurationTicks: Int = Animation.DEFAULT_DURATION_TICKS,
+    // True for GIF-sourced images: they open as an editable strip for animation preview, but the
+    // frame layout is fixed and changes can't be written back, so saving/frame-count are disabled.
+    private val readOnly: Boolean = false,
     private val onModifiedChanged: (Boolean) -> Unit,
 ) : JPanel(BorderLayout()) {
 
-    private val canvas = ImageCanvas(image)
+    private val canvas = ImageCanvas(image, initialFrames, initialDurationTicks)
 
     private val toolButtons = mutableMapOf<Tool, JToggleButton>()
     private lateinit var undoButton: JButton
     private lateinit var redoButton: JButton
     private lateinit var saveButton: JButton
+
+    private lateinit var playButton: FlatActionButton
+    private lateinit var frameSlider: JSlider
+    private lateinit var frameReadout: JLabel
+    private lateinit var frameCountSpinner: JSpinner
+    private lateinit var durationSpinner: JSpinner
+
+    // Guards against feedback loops while pushing canvas state back into the animation widgets.
+    private var updatingAnim = false
 
     private val statusDot = StatusDot()
     private val statusLabel = JBLabel()
@@ -89,6 +105,8 @@ class ImageEditorPanel(
         canvas.colorListener = { colorPicker.setColorExternally(it) }
         canvas.editListener = { onContentEdited() }
         canvas.onActiveToolChanged = { tool -> toolButtons[tool]?.isSelected = true }
+        canvas.onAnimationChanged = { current, count -> syncAnimationControls(current, count) }
+        canvas.onPlayStateChanged = { playing -> updatePlayButton(playing) }
 
         colorPicker.onColorChanged = { canvas.setCurrentColor(it) }
         paletteWidget.onColorPicked = { canvas.setCurrentColor(it) }
@@ -155,7 +173,6 @@ class ImageEditorPanel(
 
         content.add(sectionLabel("Color"))
         content.add(leftAligned(colorPicker))
-        content.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         content.add(sectionLabel("Tools"))
         val group = ButtonGroup()
@@ -165,6 +182,10 @@ class ImageEditorPanel(
 
         content.add(sectionLabel("Brush size"))
         content.add(leftAligned(buildBrushSlider()))
+        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+
+        content.add(sectionLabel("Animation"))
+        content.add(leftAligned(buildAnimationSection()))
         content.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         content.add(sectionLabel("Edit"))
@@ -225,6 +246,127 @@ class ImageEditorPanel(
         }
     }
 
+    // ---- animation section ----------------------------------------------------------------------
+
+    /**
+     * The Animation controls: a play/step transport, a frame scrubber, a frame-count picker with an
+     * auto-detect (assume-square) button, and a per-frame duration. Works for both GIFs (frame layout
+     * fixed, count controls disabled) and sprite strips (slice the image into N frames).
+     */
+    private fun buildAnimationSection(): JComponent {
+        val anim = canvas.animation
+
+        val prev = actionButton(AllIcons.Actions.Play_back, "Previous frame", "") {
+            canvas.goToFrame(canvas.animation.currentFrame - 1)
+        }
+        playButton = FlatActionButton(AllIcons.Actions.Execute).apply {
+            squareIconButton(this)
+            addActionListener { canvas.togglePlay() }
+        }
+        val next = actionButton(AllIcons.Actions.Play_forward, "Next frame", "") {
+            canvas.goToFrame(canvas.animation.currentFrame + 1)
+        }
+        frameReadout = JLabel().apply { font = JBUI.Fonts.miniFont(); foreground = JBColor.GRAY }
+        // Transport buttons on the left, frame counter trailing them on the same line.
+        val transport = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(prev); add(playButton); add(next)
+            add(Box.createHorizontalStrut(JBUI.scale(6)))
+            add(frameReadout)
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+
+        frameSlider = JSlider(1, anim.frameCount.coerceAtLeast(1), anim.currentFrame + 1).apply {
+            toolTipText = "Current frame"
+            isOpaque = false
+            addChangeListener { if (!updatingAnim) canvas.goToFrame(value - 1) }
+        }
+        val sliderRow = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(frameSlider, BorderLayout.CENTER)
+            maximumSize = Dimension(Int.MAX_VALUE, frameSlider.preferredSize.height)
+        }
+
+        frameCountSpinner = compactSpinner(SpinnerNumberModel(anim.frameCount, 1, canvas.maxFrames, 1)).apply {
+            toolTipText = "Number of frames the image is split into"
+            isEnabled = !readOnly
+            addChangeListener { if (!updatingAnim) canvas.setFrameCount(value as Int) }
+        }
+        val framesRow = animRow(frameCountSpinner, animLabel("Frames"))
+
+        durationSpinner = compactSpinner(SpinnerNumberModel(anim.frameDurationTicks, 1, Animation.MAX_DURATION_TICKS, 1)).apply {
+            toolTipText = "Ticks each frame is shown (20 ticks = 1 second)"
+            addChangeListener { if (!updatingAnim) canvas.setFrameDuration(value as Int) }
+        }
+        // Auto-detect (assume square frames) lives here as an icon, sharing the speed row.
+        val autoButton = actionButton(AllIcons.Actions.Lightning, "Auto-detect frames", "") {
+            canvas.autoDetectFrames()
+        }.apply { isEnabled = !readOnly }
+        val durationRow = animRow(durationSpinner, autoButton, animLabel("Speed"))
+
+        updatePlayButton(playing = false)
+        syncAnimationControls(anim.currentFrame, anim.frameCount)
+
+        return JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(transport)
+            add(Box.createVerticalStrut(JBUI.scale(2)))
+            add(sliderRow)
+            add(Box.createVerticalStrut(JBUI.scale(4)))
+            add(framesRow)
+            add(Box.createVerticalStrut(JBUI.scale(3)))
+            add(durationRow)
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+    }
+
+    /** A compact `field  trailing…` row; the trailing components (incl. the name label) sit to the right. */
+    private fun animRow(field: JComponent, vararg trailing: JComponent): JComponent =
+        JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)).apply {
+            isOpaque = false
+            alignmentX = Component.LEFT_ALIGNMENT
+            add(field)
+            trailing.forEach { add(it) }
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+
+    /** The grey name label shown to the right of an animation control. */
+    private fun animLabel(text: String): JLabel =
+        JLabel(text).apply { font = JBUI.Fonts.miniFont(); foreground = JBColor.GRAY }
+
+    /** A narrow spinner so the small frame-count/speed numbers don't take the whole dock width. */
+    private fun compactSpinner(model: SpinnerNumberModel): JSpinner = JSpinner(model).apply {
+        val h = preferredSize.height
+        preferredSize = Dimension(JBUI.scale(64), h)
+        minimumSize = preferredSize
+        maximumSize = preferredSize
+    }
+
+    /** Pushes the canvas's current frame/count back into the widgets without re-triggering listeners. */
+    private fun syncAnimationControls(current: Int, count: Int) {
+        updatingAnim = true
+        try {
+            frameSlider.maximum = count.coerceAtLeast(1)
+            frameSlider.value = (current + 1).coerceIn(1, frameSlider.maximum)
+            frameReadout.text = "${current + 1} / $count"
+            if (frameCountSpinner.value as Int != count) frameCountSpinner.value = count
+            val animated = count > 1
+            frameSlider.isEnabled = animated
+            playButton.isEnabled = animated
+        } finally {
+            updatingAnim = false
+        }
+    }
+
+    private fun updatePlayButton(playing: Boolean) {
+        playButton.icon = if (playing) AllIcons.Actions.Pause else AllIcons.Actions.Execute
+        playButton.toolTipText = tooltip(if (playing) "Pause" else "Play", null, "Cycle through the frames")
+    }
+
     /** Lays [components] out left-to-right, [cols] per row, keeping their natural size. */
     private fun grid(components: List<JComponent>, cols: Int): JComponent = JPanel().apply {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -272,7 +414,7 @@ class ImageEditorPanel(
 
     private fun tooltip(name: String, shortcut: String?, description: String?): String = buildString {
         append("<html><b>").append(name).append("</b>")
-        if (shortcut != null) append(" &nbsp;<font color='#888888'>").append(shortcut).append("</font>")
+        if (!shortcut.isNullOrBlank()) append(" &nbsp;<font color='#888888'>").append(shortcut).append("</font>")
         if (description != null) append("<br>").append(description)
         append("</html>")
     }
@@ -346,6 +488,15 @@ class ImageEditorPanel(
     }
 
     private fun updateSaveState(clean: Boolean) {
+        if (readOnly) {
+            // GIF-sourced previews can't be written back; never report unsaved changes.
+            saveButton.isEnabled = false
+            statusDot.color = JBColor.GRAY
+            statusDot.repaint()
+            statusLabel.text = "Animation preview (read-only)"
+            statusLabel.foreground = JBColor.GRAY
+            return
+        }
         val newDirty = !clean
         if (newDirty != dirty) {
             dirty = newDirty
@@ -359,12 +510,13 @@ class ImageEditorPanel(
     }
 
     /** Whether there are unsaved pixel edits. */
-    val hasUnsavedChanges: Boolean get() = dirty
+    val hasUnsavedChanges: Boolean get() = !readOnly && dirty
 
     /** Saves the current image to disk. Returns true on success. Safe to call from outside the panel. */
     fun saveNow(): Boolean = save()
 
     private fun save(): Boolean {
+        if (readOnly) return false
         try {
             val ext = file.extension?.lowercase()
             val format = when (ext) {

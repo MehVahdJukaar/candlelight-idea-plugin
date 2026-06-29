@@ -66,21 +66,44 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
     private fun build(): JComponent = try {
         val bytes = file.contentsToByteArray()
         val ext = file.extension?.lowercase()
-        // GIFs are kept animated and view-only; ImageIO.read would only return the first frame.
-        val decoded = if (ext == "gif") null else runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
-        if (decoded != null) {
-            ImageEditorPanel(file, decoded) { setModified(it) }
-                .also { editorPanel = it; focusComponent = it.preferredFocus }
-        } else {
-            val icon = ImageIcon(bytes)
-            if (icon.iconWidth <= 0) {
-                errorLabel("Unable to read image: ${file.name}").also { focusComponent = it }
+        if (ext == "gif") {
+            // Multi-frame GIFs open as a (read-only) sprite strip so the Animation controls can scrub
+            // and play them; single-frame or undecodable GIFs fall back to the view-only component.
+            val gif = runCatching { GifStrip.decode(bytes) }.getOrNull()
+            if (gif != null) {
+                ImageEditorPanel(file, gif.strip, gif.frameCount, gif.frameDurationTicks, readOnly = true, onModifiedChanged = { setModified(it) })
+                    .also { editorPanel = it; focusComponent = it.preferredFocus }
             } else {
-                ImageViewerComponent(icon.image, icon.iconWidth, icon.iconHeight).also { focusComponent = it }
+                viewOnly(bytes)
+            }
+        } else {
+            // Static formats decode to one editable image. A sibling .mcmeta (Minecraft animation
+            // metadata) pre-fills the frame count and speed when present.
+            val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
+            if (decoded != null) {
+                val meta = McMeta.readFor(file, decoded.width, decoded.height)
+                ImageEditorPanel(
+                    file, decoded,
+                    initialFrames = meta?.frameCount ?: 1,
+                    initialDurationTicks = meta?.frameDurationTicks ?: Animation.DEFAULT_DURATION_TICKS,
+                    onModifiedChanged = { setModified(it) },
+                ).also { editorPanel = it; focusComponent = it.preferredFocus }
+            } else {
+                viewOnly(bytes)
             }
         }
     } catch (t: Throwable) {
         errorLabel("Failed to load ${file.name}: ${t.message}").also { focusComponent = it }
+    }
+
+    /** View-only fallback for images ImageIO can't open editably (e.g. odd GIFs). */
+    private fun viewOnly(bytes: ByteArray): JComponent {
+        val icon = ImageIcon(bytes)
+        return if (icon.iconWidth <= 0) {
+            errorLabel("Unable to read image: ${file.name}").also { focusComponent = it }
+        } else {
+            ImageViewerComponent(icon.image, icon.iconWidth, icon.iconHeight).also { focusComponent = it }
+        }
     }
 
     private fun errorLabel(message: String): JComponent =

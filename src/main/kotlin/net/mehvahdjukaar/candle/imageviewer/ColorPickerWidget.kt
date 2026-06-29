@@ -1,6 +1,7 @@
 package net.mehvahdjukaar.candle.imageviewer
 
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Color
@@ -13,6 +14,8 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Rectangle
 import java.awt.RenderingHints
+import java.awt.event.FocusAdapter
+import java.awt.event.FocusEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.Box
@@ -22,6 +25,7 @@ import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JToggleButton
+import javax.swing.SwingConstants
 import kotlin.math.roundToInt
 
 /**
@@ -57,12 +61,12 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     private val hsbToggle = JToggleButton("HSB", false)
     private val preview = PreviewSwatch()
     private val channelLabels = List(3) { smallLabel() }
-    private val valueLabels = List(3) { smallLabel().apply { preferredSize = Dimension(JBUI.scale(24), preferredSize.height) } }
+    private val valueFields = List(3) { i -> valueField { onChannelTyped(i, it) } }
     private val channelSliders = List(3) { ChannelSlider() }
 
     // Alpha is independent of the RGB/HSB mode, so it gets its own permanent row below the channels.
     private val alphaLabel = smallLabel()
-    private val alphaValue = smallLabel().apply { preferredSize = Dimension(JBUI.scale(24), preferredSize.height) }
+    private val alphaField = valueField { onAlphaTyped(it) }
     private val alphaSlider = ChannelSlider()
 
     init {
@@ -146,20 +150,52 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     private fun buildChannelRow(index: Int): JComponent =
         JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
             alignmentX = Component.LEFT_ALIGNMENT
-            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(14))
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(CHANNEL_ROW_H))
             add(channelLabels[index], BorderLayout.WEST)
             add(channelSliders[index], BorderLayout.CENTER)
-            add(valueLabels[index], BorderLayout.EAST)
+            add(valueFields[index], BorderLayout.EAST)
         }
 
     private fun buildAlphaRow(): JComponent =
         JPanel(BorderLayout(JBUI.scale(4), 0)).apply {
             alignmentX = Component.LEFT_ALIGNMENT
-            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(14))
+            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(CHANNEL_ROW_H))
             add(alphaLabel, BorderLayout.WEST)
             add(alphaSlider, BorderLayout.CENTER)
-            add(alphaValue, BorderLayout.EAST)
+            add(alphaField, BorderLayout.EAST)
         }
+
+    /** A small right-aligned numeric entry that commits on Enter or focus loss via [commit]. */
+    private fun valueField(commit: (Int) -> Unit): JBTextField = JBTextField().apply {
+        font = JBUI.Fonts.miniFont()
+        horizontalAlignment = SwingConstants.RIGHT
+        // Pin the height: a text field's tall default would otherwise inflate every channel row.
+        preferredSize = Dimension(JBUI.scale(42), JBUI.scale(20))
+        minimumSize = preferredSize
+        maximumSize = preferredSize
+        val push = { text.trim().toIntOrNull()?.let(commit) }
+        addActionListener { push() }
+        addFocusListener(object : FocusAdapter() {
+            override fun focusLost(e: FocusEvent) { push() }
+        })
+    }
+
+    /** Applies a typed channel value (0..255 for RGB, 0..360/0..100 for HSB) to the picker state. */
+    private fun onChannelTyped(index: Int, raw: Int) {
+        val frac = when {
+            mode == Mode.RGB -> raw.coerceIn(0, 255) / 255.0
+            index == 0 -> raw.coerceIn(0, 360) / 360.0
+            else -> raw.coerceIn(0, 100) / 100.0
+        }
+        channelSliders[index].fraction = frac
+        onChannelMoved(index)
+    }
+
+    private fun onAlphaTyped(raw: Int) {
+        alpha = raw.coerceIn(0, 255)
+        refresh()
+        emit()
+    }
 
     private fun setMode(newMode: Mode) {
         if (newMode == mode) return
@@ -195,7 +231,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
 
         alphaSlider.fraction = alpha / 255.0
         alphaSlider.repaint() // the track gradient tracks the current color, so refresh it too
-        alphaValue.text = alpha.toString()
+        setFieldText(alphaField, alpha)
 
         val letters = if (mode == Mode.RGB) RGB_LETTERS else HSB_LETTERS
         val rgb = color
@@ -204,17 +240,22 @@ class ColorPickerWidget(initial: Color) : JPanel() {
             if (mode == Mode.RGB) {
                 val v = when (i) { 0 -> rgb.red; 1 -> rgb.green; else -> rgb.blue }
                 channelSliders[i].fraction = v / 255.0
-                valueLabels[i].text = v.toString()
+                setFieldText(valueFields[i], v)
             } else {
                 val values = floatArrayOf(hue, sat, bri)
                 channelSliders[i].fraction = values[i].toDouble()
-                valueLabels[i].text = (values[i] * if (i == 0) 360 else 100).roundToInt().toString()
+                setFieldText(valueFields[i], (values[i] * if (i == 0) 360 else 100).roundToInt())
             }
         }
         updating = false
     }
 
     private fun emit() = onColorChanged?.invoke(color)
+
+    /** Updates a value field's text, but not while it has focus, so it can't clobber active typing. */
+    private fun setFieldText(field: JBTextField, value: Int) {
+        if (!field.isFocusOwner) field.text = value.toString()
+    }
 
     private fun smallLabel() = JLabel().apply {
         font = JBUI.Fonts.miniFont()
@@ -312,9 +353,9 @@ class ColorPickerWidget(initial: Color) : JPanel() {
             addMouseMotionListener(mouse)
         }
 
-        override fun getPreferredSize() = Dimension(JBUI.scale(80), JBUI.scale(12))
-        override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(12))
-        override fun getMinimumSize() = Dimension(JBUI.scale(20), JBUI.scale(12))
+        override fun getPreferredSize() = Dimension(JBUI.scale(80), JBUI.scale(15))
+        override fun getMaximumSize() = Dimension(Int.MAX_VALUE, JBUI.scale(15))
+        override fun getMinimumSize() = Dimension(JBUI.scale(20), JBUI.scale(15))
 
         private fun setFromMouse(e: MouseEvent) {
             val thumb = JBUI.scale(THUMB)
@@ -367,6 +408,7 @@ class ColorPickerWidget(initial: Color) : JPanel() {
     }
 
     companion object {
+        private const val CHANNEL_ROW_H = 22
         private val RGB_LETTERS = listOf("R", "G", "B")
         private val HSB_LETTERS = listOf("H", "S", "B")
     }
