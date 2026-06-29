@@ -19,9 +19,16 @@ class ImageDocument(source: BufferedImage) {
 
     /** Active selection in image-pixel coordinates, or null for "whole image". */
     var selection: Rectangle? = null
+        set(value) {
+            field = value
+            onSelectionChanged?.invoke()
+        }
 
     /** Invoked whenever the pixels change (draw, erase, move, undo, redo) — i.e. a real edit. */
     var onContentChanged: (() -> Unit)? = null
+
+    /** Invoked whenever the selection changes (not a file edit), so the UI can refresh copy/cut state. */
+    var onSelectionChanged: (() -> Unit)? = null
 
     private val undoStack = ArrayDeque<BufferedImage>()
     private val redoStack = ArrayDeque<BufferedImage>()
@@ -114,14 +121,21 @@ class ImageDocument(source: BufferedImage) {
         if (changed) onContentChanged?.invoke()
     }
 
-    /** Copies a region into a standalone image and clears it from the document (for Move). */
-    fun liftRegion(region: Rectangle): BufferedImage {
+    /** Returns an independent ARGB copy of [region] (clamped to the image) without modifying the document. */
+    fun copyRegion(region: Rectangle): BufferedImage {
         val r = region.intersection(Rectangle(0, 0, width, height))
-        val lifted = BufferedImage(r.width.coerceAtLeast(1), r.height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
-        lifted.createGraphics().apply {
+        val out = BufferedImage(r.width.coerceAtLeast(1), r.height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
+        out.createGraphics().apply {
             drawImage(image, 0, 0, r.width, r.height, r.x, r.y, r.x + r.width, r.y + r.height, null)
             dispose()
         }
+        return out
+    }
+
+    /** Copies a region into a standalone image and clears it from the document (for Move/Cut). */
+    fun liftRegion(region: Rectangle): BufferedImage {
+        val lifted = copyRegion(region)
+        val r = region.intersection(Rectangle(0, 0, width, height))
         image.createGraphics().apply {
             composite = AlphaComposite.Clear
             fillRect(r.x, r.y, r.width, r.height)

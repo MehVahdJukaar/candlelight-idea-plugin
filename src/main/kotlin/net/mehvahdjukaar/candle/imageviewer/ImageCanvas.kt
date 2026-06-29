@@ -17,6 +17,7 @@ import java.awt.Color
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Point
+import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.event.ActionEvent
 import java.awt.event.ComponentAdapter
@@ -69,12 +70,36 @@ class ImageCanvas(
         RecolorTool(), ZoomTool(), HandTool(),
     )
 
-    var activeTool: Tool = tools.first { it.id == "pencil" }
+    // Seeded from the session-shared tool so a tool picked in one image is active in the next too.
+    var activeTool: Tool = tools.first { it.id == SharedEditorState.lastToolId }
         set(value) {
             field = value
             refreshCursor()
+            // Don't echo a change we're applying from another editor's broadcast, or it would loop.
+            if (!applyingSharedTool) SharedEditorState.setTool(value.id)
             onActiveToolChanged?.invoke(value)
         }
+
+    /** True while applying a tool change broadcast by another editor, so we don't re-broadcast it. */
+    private var applyingSharedTool = false
+
+    /** Adopts a tool change broadcast by another editor (selected by id; no re-broadcast). */
+    private val sharedToolListener: (String) -> Unit = { id ->
+        if (id != activeTool.id) {
+            tools.firstOrNull { it.id == id }?.let { tool ->
+                applyingSharedTool = true
+                try { activeTool = tool } finally { applyingSharedTool = false }
+            }
+        }
+    }
+
+    /** Adopts a color change broadcast by another editor (updates the picker; no re-broadcast). */
+    private val sharedColorListener: (Color) -> Unit = { color ->
+        if (color.rgb != currentColor.rgb) {
+            currentColor = color
+            colorListener?.invoke(color)
+        }
+    }
 
     private val eyedropper: Tool get() = tools.first { it.id == "pick" }
 
@@ -84,7 +109,8 @@ class ImageCanvas(
      */
     var onActiveToolChanged: ((Tool) -> Unit)? = null
 
-    var currentColor: Color = JBColor.black
+    // Seeded from the session-shared color so a color picked in one image carries into the next.
+    var currentColor: Color = SharedEditorState.lastColor
         private set
 
     /** Square brush side length, in image pixels, applied to the pencil and eraser. */
@@ -101,6 +127,9 @@ class ImageCanvas(
 
     var colorListener: ((Color) -> Unit)? = null
     var editListener: (() -> Unit)? = null
+
+    /** Notifies the UI when the selection changes, so copy/cut buttons can enable/disable. */
+    var selectionListener: (() -> Unit)? = null
 
     private var panLast: Point? = null
 
@@ -124,12 +153,15 @@ class ImageCanvas(
     init {
         isOpaque = true
         isFocusable = true
-        cursor = activeTool.cursor
+        // Route through refreshCursor() so the initial tool (a brush) hides the OS cursor too,
+        // instead of showing its glyph cursor until the next tool switch.
+        refreshCursor()
 
         document.onContentChanged = {
             editListener?.invoke()
             repaint()
         }
+        document.onSelectionChanged = { selectionListener?.invoke() }
 
         val mouse = object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent) {
@@ -309,10 +341,17 @@ class ImageCanvas(
     override fun addNotify() {
         super.addNotify()
         if (!viewport.userInteracted) initialView()
+        // Adopt anything the shared state changed to since construction, then listen for live changes.
+        sharedColorListener(SharedEditorState.lastColor)
+        sharedToolListener(SharedEditorState.lastToolId)
+        SharedEditorState.addColorListener(sharedColorListener)
+        SharedEditorState.addToolListener(sharedToolListener)
     }
 
     override fun removeNotify() {
         pause()
+        SharedEditorState.removeColorListener(sharedColorListener)
+        SharedEditorState.removeToolListener(sharedToolListener)
         super.removeNotify()
     }
 
@@ -323,7 +362,50 @@ class ImageCanvas(
 
     fun setCurrentColor(color: Color) {
         currentColor = color
+        // Broadcast to other open editors. The echo back to us is ignored (rgb already matches).
+        SharedEditorState.setColor(color)
         colorListener?.invoke(color)
+    }
+
+    // ---- clipboard ------------------------------------------------------------------------------
+
+    /** True while a region is selected, so copy/cut can act on it. */
+    val hasSelection: Boolean get() = document.selection != null
+
+    /** True while the shared clipboard holds an image that can be pasted. */
+    val canPaste: Boolean get() = SharedEditorState.clipboard != null
+
+    /** Copies the selected region into the shared clipboard (no document change). */
+    fun copySelection() {
+        val sel = document.selection ?: return
+        SharedEditorState.clipboard = document.copyRegion(sel)
+        selectionListener?.invoke()
+    }
+
+    /** Copies the selected region into the shared clipboard and clears it from the image. */
+    fun cutSelection() {
+        val sel = document.selection ?: return
+        document.pushUndo()
+        SharedEditorState.clipboard = document.liftRegion(sel)
+        document.selection = null
+        repaint()
+    }
+
+    /**
+     * Stamps the shared clipboard onto the image, centered on the current view and clamped within the
+     * image bounds, then selects the pasted region so it can be nudged with the Move tool.
+     */
+    fun paste() {
+        val img = SharedEditorState.clipboard ?: return
+        document.pushUndo()
+        val center = viewport.toImage(width / 2, height / 2)
+        val x = (center.x - img.width / 2).coerceIn(0, (document.width - img.width).coerceAtLeast(0))
+        val y = (center.y - img.height / 2).coerceIn(0, (document.height - img.height).coerceAtLeast(0))
+        document.stamp(img, x, y)
+        document.selection = Rectangle(x, y, img.width, img.height)
+            .intersection(Rectangle(0, 0, document.width, document.height))
+            .takeIf { it.width > 0 && it.height > 0 }
+        repaint()
     }
 
     fun fitToWindow() {
