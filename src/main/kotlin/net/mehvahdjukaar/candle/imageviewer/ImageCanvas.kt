@@ -27,8 +27,11 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.AbstractAction
 import javax.swing.JComponent
+import javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT
+import javax.swing.JComponent.WHEN_FOCUSED
 import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
+import javax.swing.Timer
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -37,10 +40,29 @@ import kotlin.math.roundToInt
  * transform) and the set of [Tool]s, and routes mouse/keyboard input to the active tool while
  * rendering the document. Editing logic lives in the tools; pixel logic lives in the document.
  */
-class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
+class ImageCanvas(
+    source: java.awt.image.BufferedImage,
+    initialFrames: Int = 1,
+    initialDurationTicks: Int = Animation.DEFAULT_DURATION_TICKS,
+) : JComponent() {
 
     val document = ImageDocument(source)
     private val viewport = Viewport()
+
+    /** Frame-slicing/playback state; drives the dock's Animation section. */
+    val animation = Animation().apply {
+        reset(document.width, document.height, initialFrames)
+        frameDurationTicks = initialDurationTicks
+    }
+
+    /** Running while the animation plays; null when paused. */
+    private var playTimer: Timer? = null
+
+    /** Notifies the UI after the current frame or frame count changes: (currentFrame, frameCount). */
+    var onAnimationChanged: ((Int, Int) -> Unit)? = null
+
+    /** Notifies the UI when playback starts/stops, so the play/pause button can update. */
+    var onPlayStateChanged: ((Boolean) -> Unit)? = null
 
     val tools: List<Tool> = listOf(
         EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true),
@@ -184,7 +206,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
         addComponentListener(object : ComponentAdapter() {
             override fun componentResized(e: ComponentEvent) {
-                if (viewport.userInteracted) repaint() else fitToWindow()
+                if (viewport.userInteracted) repaint() else initialView()
             }
         })
 
@@ -250,6 +272,7 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
         cursor = when {
             spacePanning -> ToolCursors.hand()
             altSampling && activeTool.altPicksColor -> eyedropper.cursor
+            activeTool.hidesCursor -> ToolCursors.blank()
             else -> activeTool.cursor
         }
     }
@@ -285,7 +308,17 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
     override fun addNotify() {
         super.addNotify()
-        if (!viewport.userInteracted) fitToWindow()
+        if (!viewport.userInteracted) initialView()
+    }
+
+    override fun removeNotify() {
+        pause()
+        super.removeNotify()
+    }
+
+    /** The default view when the user hasn't panned/zoomed: one frame if animated, else the whole image. */
+    private fun initialView() {
+        if (animation.isAnimated) focusCurrentFrame(fit = true) else fitToWindow()
     }
 
     fun setCurrentColor(color: Color) {
@@ -303,6 +336,77 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
     /** Re-centers the image at the current zoom without changing the zoom level. */
     fun centerView() = recenter()
+
+    // ---- animation ------------------------------------------------------------------------------
+
+    val isPlaying: Boolean get() = playTimer?.isRunning == true
+
+    /** Largest frame count the image can be sliced into (one frame per pixel along the strip axis). */
+    val maxFrames: Int get() = animation.maxFrames
+
+    /** Slices the image into [count] equal frames and frames the first one. */
+    fun setFrameCount(count: Int) {
+        pause()
+        animation.setFrameCount(count)
+        focusCurrentFrame(fit = true)
+        notifyAnimation()
+    }
+
+    /** Picks a frame count assuming square frames (the Minecraft sprite-strip convention). */
+    fun autoDetectFrames() {
+        pause()
+        animation.autoDetectSquareFrames()
+        focusCurrentFrame(fit = true)
+        notifyAnimation()
+    }
+
+    /** Shows frame [index] (wrapping), keeping the current zoom. */
+    fun goToFrame(index: Int) {
+        animation.goTo(index)
+        focusCurrentFrame(fit = false)
+        notifyAnimation()
+    }
+
+    fun setFrameDuration(ticks: Int) {
+        animation.frameDurationTicks = ticks
+        if (isPlaying) playTimer?.delay = playbackDelayMs()
+    }
+
+    fun togglePlay() = if (isPlaying) pause() else play()
+
+    fun play() {
+        if (!animation.isAnimated || isPlaying) return
+        focusCurrentFrame(fit = false)
+        playTimer = Timer(playbackDelayMs()) {
+            animation.next()
+            focusCurrentFrame(fit = false)
+            notifyAnimation()
+        }.apply { isCoalesce = true; start() }
+        onPlayStateChanged?.invoke(true)
+    }
+
+    fun pause() {
+        if (playTimer == null) return
+        playTimer?.stop()
+        playTimer = null
+        onPlayStateChanged?.invoke(false)
+    }
+
+    private fun playbackDelayMs(): Int = (animation.frameDurationTicks * MS_PER_TICK).coerceAtLeast(1)
+
+    /** Frames the current frame: [fit] zooms it to fill the view, otherwise just re-centers on it. */
+    private fun focusCurrentFrame(fit: Boolean) {
+        if (!animation.isAnimated) {
+            repaint()
+            return
+        }
+        val r = animation.frameRect()
+        if (fit) viewport.fitRegion(width, height, r, FRAME_FIT_SCALE)
+        else viewport.focusOn(width, height, r.x + r.width / 2.0, r.y + r.height / 2.0)
+        repaint()
+    }
+
+    private fun notifyAnimation() = onAnimationChanged?.invoke(animation.currentFrame, animation.frameCount)
 
     // ---- input ----------------------------------------------------------------------------------
 
@@ -373,15 +477,22 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
             g2.color = CanvasRender.CANVAS_BACKGROUND
             g2.fillRect(0, 0, width, height)
 
+            // When animated we draw the whole strip but show only the current frame: the viewport is
+            // centered on that frame and the draw is clipped to it, so neighbouring frames stay hidden.
             val imageRect = viewport.imageRect(document.width, document.height)
-            CanvasRender.checkerboard(g2, imageRect)
+            val animated = animation.isAnimated
+            val frameRect = if (animated) viewport.toComponent(animation.frameRect()) else imageRect
+            CanvasRender.checkerboard(g2, frameRect)
 
             g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR)
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+            val savedClip = g2.clip
+            if (animated) g2.clipRect(frameRect.x, frameRect.y, frameRect.width, frameRect.height)
             g2.drawImage(document.image, imageRect.x, imageRect.y, imageRect.width, imageRect.height, this)
+            g2.clip = savedClip
 
             g2.color = JBColor.border()
-            g2.drawRect(imageRect.x, imageRect.y, imageRect.width, imageRect.height)
+            g2.drawRect(frameRect.x, frameRect.y, frameRect.width, frameRect.height)
 
             // While resizing show the active paint tool's outline, not the Alt-sampling eyedropper.
             val previewTool = if (brushResize != null) activeTool else toolFor(altSampling)
@@ -397,7 +508,8 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
     }
 
     private fun paintInfo(g2: Graphics2D) {
-        val label = "${document.width}×${document.height}   ${(viewport.zoom * 100).roundToInt()}%   ${toolFor(altSampling).displayName.lowercase()}"
+        val frameInfo = if (animation.isAnimated) "   frame ${animation.currentFrame + 1}/${animation.frameCount}" else ""
+        val label = "${document.width}×${document.height}   ${(viewport.zoom * 100).roundToInt()}%   ${toolFor(altSampling).displayName.lowercase()}$frameInfo"
         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
         g2.font = UIUtil.getLabelFont()
         val fm = g2.fontMetrics
@@ -443,5 +555,11 @@ class ImageCanvas(source: java.awt.image.BufferedImage) : JComponent() {
 
         // Pixels of Alt+right-drag travel per one step of brush-size change.
         private const val BRUSH_DRAG_PX = 6
+
+        // Milliseconds per Minecraft tick, for converting frame durations to playback timer delays.
+        private const val MS_PER_TICK = 50
+
+        // Leaves a small margin around a framed animation frame so its border stays visible.
+        private const val FRAME_FIT_SCALE = 0.92
     }
 }

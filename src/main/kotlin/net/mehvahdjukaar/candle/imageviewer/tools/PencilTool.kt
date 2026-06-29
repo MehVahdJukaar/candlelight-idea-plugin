@@ -24,6 +24,9 @@ class PencilTool(private val erase: Boolean) : Tool {
     override val cursor: Cursor = if (erase) ToolCursors.eraser() else ToolCursors.pencil()
     override val altPicksColor = true
 
+    // The brush outline (paintHover) is the pointer, so the OS cursor would just be redundant clutter.
+    override val hidesCursor = true
+
     /** Side length, in image pixels, of the square brush. Shared by the canvas's brush-size slider. */
     var brushSize: Int = 1
 

@@ -46,6 +46,16 @@ object ToolCursors {
     fun hand(): Cursor =
         cursor("img-hand", GridHotspot(8f, 9f), ::drawHandGlyph)
 
+    /** Fully transparent cursor, for tools that draw their own on-canvas pointer (e.g. the brush outline). */
+    fun blank(): Cursor = cache.getOrPut("img-blank") {
+        try {
+            val image = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
+            Toolkit.getDefaultToolkit().createCustomCursor(image, Point(0, 0), "blank") ?: crosshair
+        } catch (_: Throwable) {
+            crosshair
+        }
+    }
+
     private fun cursor(name: String, hotspot: GridHotspot, paint: (Graphics2D) -> Unit): Cursor =
         cache.getOrPut(name) { build(name, hotspot, paint) }
 
