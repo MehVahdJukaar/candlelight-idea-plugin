@@ -3,6 +3,7 @@ package net.mehvahdjukaar.candle.imageviewer
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import net.mehvahdjukaar.candle.imageviewer.tools.CropTool
 import net.mehvahdjukaar.candle.imageviewer.tools.EyedropperTool
 import net.mehvahdjukaar.candle.imageviewer.tools.HandTool
 import net.mehvahdjukaar.candle.imageviewer.tools.MoveTool
@@ -30,6 +31,8 @@ import javax.swing.AbstractAction
 import javax.swing.JComponent
 import javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT
 import javax.swing.JComponent.WHEN_FOCUSED
+import javax.swing.JMenuItem
+import javax.swing.JPopupMenu
 import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
 import javax.swing.Timer
@@ -59,6 +62,10 @@ class ImageCanvas(
     /** Running while the animation plays; null when paused. */
     private var playTimer: Timer? = null
 
+    /** Advances the selection marching-ants while a region is selected; null otherwise. */
+    private var selectionAnimTimer: Timer? = null
+    private var selectionDashPhase = 0f
+
     /** Notifies the UI after the current frame or frame count changes: (currentFrame, frameCount). */
     var onAnimationChanged: ((Int, Int) -> Unit)? = null
 
@@ -67,13 +74,15 @@ class ImageCanvas(
 
     val tools: List<Tool> = listOf(
         EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true),
-        RecolorTool(), ZoomTool(), HandTool(),
+        RecolorTool(), CropTool(), ZoomTool(), HandTool(),
     )
 
     // Seeded from the session-shared tool so a tool picked in one image is active in the next too.
     var activeTool: Tool = tools.first { it.id == SharedEditorState.lastToolId }
         set(value) {
+            if (field.id == "select" && value.id != "select") commitPendingPaste()
             field = value
+            value.onActivated(document)
             refreshCursor()
             // Don't echo a change we're applying from another editor's broadcast, or it would loop.
             if (!applyingSharedTool) SharedEditorState.setTool(value.id)
@@ -131,6 +140,9 @@ class ImageCanvas(
     /** Notifies the UI when the selection changes, so copy/cut buttons can enable/disable. */
     var selectionListener: (() -> Unit)? = null
 
+    /** Invoked from the canvas context menu's "Resize…" item; the panel wires this to its dialog. */
+    var onResizeRequested: (() -> Unit)? = null
+
     private var panLast: Point? = null
 
     /** Mouse position (component space) while hovering, for the active tool's hover preview. */
@@ -148,7 +160,14 @@ class ImageCanvas(
     /** Active while Alt + right-drag is resizing the brush, Photoshop-style; null otherwise. */
     private var brushResize: BrushResize? = null
 
+    /** Clipboard pixels waiting to be placed; the image underneath stays untouched until confirmed. */
+    private var pendingPaste: PendingPaste? = null
+    private var pasteMoveGrab: Point? = null
+    private var pasteMoveOrigin: Point? = null
+
     private class BrushResize(val anchor: Point, val startSize: Int)
+
+    private class PendingPaste(val image: java.awt.image.BufferedImage, var x: Int, var y: Int)
 
     init {
         isOpaque = true
@@ -161,12 +180,30 @@ class ImageCanvas(
             editListener?.invoke()
             repaint()
         }
-        document.onSelectionChanged = { selectionListener?.invoke() }
+        document.onSelectionChanged = {
+            selectionListener?.invoke()
+            updateSelectionAnimation()
+        }
+        // A crop/resize (or undo/redo of one) changes the pixel dimensions: the frame slicing no
+        // longer applies, so collapse to a single frame and re-fit the newly sized image in view.
+        document.onDimensionsChanged = {
+            pause()
+            animation.reset(document.width, document.height, 1)
+            notifyAnimation()
+            viewport.fit(width, height, document.width, document.height)
+        }
 
         val mouse = object : MouseAdapter() {
             override fun mousePressed(e: MouseEvent) {
                 requestFocusInWindow()
+                // Right-click opens the crop/resize context menu (Alt+right resizes the brush; Ctrl+right pans).
+                if (e.isPopupTrigger && !e.isAltDown && !e.isControlDown) { showContextMenu(e); return }
                 if (tryStartBrushResize(e)) return
+                // Double-click commits a staged gesture (the crop box) without needing the keyboard.
+                if (e.clickCount == 2 && SwingUtilities.isLeftMouseButton(e) && activeTool.onCommit(document)) {
+                    repaint()
+                    return
+                }
                 onPress(e)
             }
 
@@ -178,6 +215,8 @@ class ImageCanvas(
 
             override fun mouseReleased(e: MouseEvent) {
                 if (brushResize != null) { brushResize = null; repaint(); return }
+                // Some platforms fire the popup trigger on release rather than press.
+                if (e.isPopupTrigger && !e.isAltDown && !e.isControlDown) { showContextMenu(e); return }
                 onRelease(e)
             }
 
@@ -260,6 +299,7 @@ class ImageCanvas(
         bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pencil") }
         bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("eraser") }
         bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("recolor") }
+        bindKey(KeyEvent.VK_C, 0, "tool.crop", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("crop") }
         bindKey(KeyEvent.VK_Z, 0, "tool.zoom", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("zoom") }
         bindKey(KeyEvent.VK_H, 0, "tool.hand", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("hand") }
 
@@ -284,10 +324,27 @@ class ImageCanvas(
         bindKey(KeyEvent.VK_DOWN, 0, "pan.down") { pan(0, -step) }
         bindKey(KeyEvent.VK_HOME, 0, "recenter", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { recenter() }
 
-        // ---- selection ----------------------------------------------------------------------
+        // ---- selection & commit -------------------------------------------------------------
         bindKey(KeyEvent.VK_ESCAPE, 0, "deselect", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
-            document.selection = null
+            if (pendingPaste != null) {
+                cancelPendingPaste()
+                repaint()
+                return@bindKey
+            }
+            // Let the active tool discard its pending gesture (e.g. the crop box) first; if it had
+            // nothing staged, fall back to clearing the selection.
+            if (!activeTool.onCancel(document)) document.selection = null
             repaint()
+        }
+        bindKey(KeyEvent.VK_ENTER, 0, "commit", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
+            when {
+                commitPendingPaste() -> repaint()
+                activeTool.onCommit(document) -> repaint()
+            }
+        }
+        bindKey(KeyEvent.VK_DELETE, 0, "deleteSelection", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { deleteSelection() }
+        bindKey(KeyEvent.VK_BACK_SPACE, 0, "deleteSelection.backspace", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
+            deleteSelection()
         }
     }
 
@@ -299,14 +356,20 @@ class ImageCanvas(
     private fun toolFor(alt: Boolean): Tool =
         if (alt && activeTool.altPicksColor) eyedropper else activeTool
 
-    /** Sets the cursor for the current gesture: space pans, Alt samples, otherwise the tool's own. */
+    /** Sets the cursor for the current gesture: space/Ctrl+right pans, Alt samples, otherwise the tool's own. */
     private fun refreshCursor() {
         cursor = when {
-            spacePanning -> ToolCursors.hand()
+            spacePanning || panLast != null -> ToolCursors.hand()
+            shouldHideCursor() -> ToolCursors.blank()
             altSampling && activeTool.altPicksColor -> eyedropper.cursor
-            activeTool.hidesCursor -> ToolCursors.blank()
             else -> activeTool.cursor
         }
+    }
+
+    /** True while the OS pointer should be hidden (brush/eraser tools, or mid-stroke select drag). */
+    private fun shouldHideCursor(): Boolean {
+        strokeTool?.let { if (it.hidesCursor || it.id == "select") return true }
+        return activeTool.hidesCursor
     }
 
     private fun actualSize() {
@@ -346,10 +409,12 @@ class ImageCanvas(
         sharedToolListener(SharedEditorState.lastToolId)
         SharedEditorState.addColorListener(sharedColorListener)
         SharedEditorState.addToolListener(sharedToolListener)
+        updateSelectionAnimation()
     }
 
     override fun removeNotify() {
         pause()
+        stopSelectionAnimation()
         SharedEditorState.removeColorListener(sharedColorListener)
         SharedEditorState.removeToolListener(sharedToolListener)
         super.removeNotify()
@@ -377,6 +442,7 @@ class ImageCanvas(
 
     /** Copies the selected region into the shared clipboard (no document change). */
     fun copySelection() {
+        commitPendingPaste()
         val sel = document.selection ?: return
         SharedEditorState.clipboard = document.copyRegion(sel)
         selectionListener?.invoke()
@@ -384,6 +450,7 @@ class ImageCanvas(
 
     /** Copies the selected region into the shared clipboard and clears it from the image. */
     fun cutSelection() {
+        commitPendingPaste()
         val sel = document.selection ?: return
         document.pushUndo()
         SharedEditorState.clipboard = document.liftRegion(sel)
@@ -391,21 +458,54 @@ class ImageCanvas(
         repaint()
     }
 
+    /** Erases the selected region to transparency, leaving the selection in place. */
+    fun deleteSelection() {
+        if (pendingPaste != null) return
+        val sel = document.selection?.takeIf { it.width > 0 && it.height > 0 } ?: return
+        document.pushUndo()
+        document.clearRegion(sel)
+        repaint()
+    }
+
     /**
-     * Stamps the shared clipboard onto the image, centered on the current view and clamped within the
-     * image bounds, then selects the pasted region so it can be nudged with the Move tool.
+     * Floats the clipboard over the canvas without altering pixels yet. Switches to the select tool
+     * so the placement can be dragged; Enter or switching away from select stamps it down.
      */
     fun paste() {
         val img = SharedEditorState.clipboard ?: return
-        document.pushUndo()
+        cancelPendingPaste()
         val center = viewport.toImage(width / 2, height / 2)
         val x = (center.x - img.width / 2).coerceIn(0, (document.width - img.width).coerceAtLeast(0))
         val y = (center.y - img.height / 2).coerceIn(0, (document.height - img.height).coerceAtLeast(0))
-        document.stamp(img, x, y)
+        pendingPaste = PendingPaste(img, x, y)
         document.selection = Rectangle(x, y, img.width, img.height)
             .intersection(Rectangle(0, 0, document.width, document.height))
             .takeIf { it.width > 0 && it.height > 0 }
+        activeTool = tools.first { it.id == "select" }
+        selectionListener?.invoke()
         repaint()
+    }
+
+    /** Stamps a floating paste onto the document. Returns true if something was placed. */
+    private fun commitPendingPaste(): Boolean {
+        val paste = pendingPaste ?: return false
+        document.pushUndo()
+        document.stamp(paste.image, paste.x, paste.y)
+        document.selection = Rectangle(paste.x, paste.y, paste.image.width, paste.image.height)
+            .intersection(Rectangle(0, 0, document.width, document.height))
+            .takeIf { it.width > 0 && it.height > 0 }
+        pendingPaste = null
+        pasteMoveGrab = null
+        pasteMoveOrigin = null
+        selectionListener?.invoke()
+        return true
+    }
+
+    private fun cancelPendingPaste() {
+        pendingPaste = null
+        pasteMoveGrab = null
+        pasteMoveOrigin = null
+        document.selection = null
     }
 
     fun fitToWindow() {
@@ -495,6 +595,12 @@ class ImageCanvas(
     private fun toolContext(e: MouseEvent) =
         ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, currentColor, ::setCurrentColor)
 
+    /** Middle-click, Space+left-drag, or Ctrl+right-drag — all pan the view without editing. */
+    private fun isPanGesture(e: MouseEvent): Boolean =
+        SwingUtilities.isMiddleMouseButton(e)
+            || (spacePanning && SwingUtilities.isLeftMouseButton(e))
+            || (SwingUtilities.isRightMouseButton(e) && e.isControlDown && !e.isAltDown)
+
     /**
      * Starts the Photoshop-style brush resize gesture: Alt + right-drag over a paint tool. Dragging
      * right grows the brush, left shrinks it; the outline previews at the anchor while resizing.
@@ -514,16 +620,35 @@ class ImageCanvas(
     }
 
     private fun onPress(e: MouseEvent) {
-        if (SwingUtilities.isMiddleMouseButton(e) || (spacePanning && SwingUtilities.isLeftMouseButton(e))) {
+        if (isPanGesture(e)) {
             panLast = e.point
+            refreshCursor()
             return
         }
         if (!SwingUtilities.isLeftMouseButton(e)) return
+        if (tryStartPendingPasteMove(e)) return
         val tool = toolFor(e.isAltDown)
         strokeTool = tool
         tool.onPress(toolContext(e))
+        refreshCursor()
         clampView()
         repaint()
+    }
+
+    private fun tryStartPendingPasteMove(e: MouseEvent): Boolean {
+        val paste = pendingPaste ?: return false
+        if (activeTool.id != "select") return false
+        val sel = document.selection ?: return false
+        val imgPt = viewport.toImage(e.x, e.y)
+        if (sel.contains(imgPt)) {
+            pasteMoveGrab = imgPt
+            pasteMoveOrigin = Point(paste.x, paste.y)
+            strokeTool = activeTool
+            refreshCursor()
+            return true
+        }
+        cancelPendingPaste()
+        return false
     }
 
     private fun onDrag(e: MouseEvent) {
@@ -531,6 +656,18 @@ class ImageCanvas(
         if (pan != null) {
             viewport.pan((e.x - pan.x).toDouble(), (e.y - pan.y).toDouble())
             panLast = e.point
+            clampView()
+            repaint()
+            return
+        }
+        if (pasteMoveGrab != null) {
+            val paste = pendingPaste ?: return
+            val grab = pasteMoveGrab ?: return
+            val origin = pasteMoveOrigin ?: return
+            val imgPt = viewport.toImage(e.x, e.y)
+            paste.x = (origin.x + (imgPt.x - grab.x)).coerceIn(0, (document.width - paste.image.width).coerceAtLeast(0))
+            paste.y = (origin.y + (imgPt.y - grab.y)).coerceIn(0, (document.height - paste.image.height).coerceAtLeast(0))
+            document.selection = Rectangle(paste.x, paste.y, paste.image.width, paste.image.height)
             clampView()
             repaint()
             return
@@ -544,10 +681,41 @@ class ImageCanvas(
     private fun onRelease(e: MouseEvent) {
         if (panLast != null) {
             panLast = null
+            refreshCursor()
+            return
+        }
+        if (pasteMoveGrab != null) {
+            pasteMoveGrab = null
+            pasteMoveOrigin = null
+            strokeTool = null
+            refreshCursor()
+            repaint()
             return
         }
         (strokeTool ?: activeTool).onRelease(toolContext(e))
         strokeTool = null
+        refreshCursor()
+        repaint()
+    }
+
+    /** Right-click menu: crop (to the selection, a staged crop box, or by picking the tool) or resize. */
+    private fun showContextMenu(e: MouseEvent) {
+        val menu = JPopupMenu()
+        menu.add(JMenuItem("Crop").apply { addActionListener { contextCrop() } })
+        menu.add(JMenuItem("Resize…").apply {
+            isEnabled = onResizeRequested != null
+            addActionListener { onResizeRequested?.invoke() }
+        })
+        menu.show(this, e.x, e.y)
+    }
+
+    private fun contextCrop() {
+        val sel = document.selection
+        when {
+            sel != null -> document.crop(sel)          // crop straight to a select-tool selection
+            activeTool.onCommit(document) -> {}         // or commit the crop tool's staged box
+            else -> activeTool = tools.first { it.id == "crop" } // otherwise arm the crop tool to drag one
+        }
         repaint()
     }
 
@@ -579,9 +747,18 @@ class ImageCanvas(
             // While resizing show the active paint tool's outline, not the Alt-sampling eyedropper.
             val previewTool = if (brushResize != null) activeTool else toolFor(altSampling)
             previewTool.paintOverlay(g2, viewport)
-            // The brush-outline hover preview is meaningless while the space-pan grab is active.
-            if (!spacePanning) hoverPoint?.let { previewTool.paintHover(g2, viewport, viewport.toImage(it.x, it.y)) }
-            document.selection?.let { CanvasRender.selectionOutline(g2, viewport.toComponent(it)) }
+            // The brush-outline hover preview is meaningless while panning.
+            val showHover = !spacePanning && panLast == null &&
+                strokeTool?.let { !it.hidesCursor && it.id != "select" } != false
+            if (showHover) hoverPoint?.let { previewTool.paintHover(g2, viewport, viewport.toImage(it.x, it.y)) }
+            pendingPaste?.let { paste ->
+                val r = viewport.toComponent(Rectangle(paste.x, paste.y, paste.image.width, paste.image.height))
+                g2.drawImage(paste.image, r.x, r.y, r.width, r.height, this)
+            }
+            document.selection?.takeIf { it.width > 0 && it.height > 0 }?.let { sel ->
+                val viewBounds = g2.clipBounds ?: Rectangle(0, 0, width, height)
+                CanvasRender.selectionHighlight(g2, viewBounds, viewport.toComponent(sel), selectionDashPhase)
+            }
 
             paintInfo(g2)
         } finally {
@@ -589,9 +766,30 @@ class ImageCanvas(
         }
     }
 
+    private fun updateSelectionAnimation() {
+        val active = document.selection?.let { it.width > 0 && it.height > 0 } == true && isShowing
+        if (active && selectionAnimTimer == null) {
+            selectionAnimTimer = Timer(SELECTION_ANIM_MS) {
+                val period = JBUI.scale(SELECTION_DASH_PERIOD).toFloat()
+                selectionDashPhase = (selectionDashPhase + 1f) % period
+                repaint()
+            }.apply { start() }
+        } else if (!active) {
+            stopSelectionAnimation()
+        }
+    }
+
+    private fun stopSelectionAnimation() {
+        selectionAnimTimer?.stop()
+        selectionAnimTimer = null
+        selectionDashPhase = 0f
+    }
+
     private fun paintInfo(g2: Graphics2D) {
         val frameInfo = if (animation.isAnimated) "   frame ${animation.currentFrame + 1}/${animation.frameCount}" else ""
-        val label = "${document.width}×${document.height}   ${(viewport.zoom * 100).roundToInt()}%   ${toolFor(altSampling).displayName.lowercase()}$frameInfo"
+        val selInfo = document.selection?.takeIf { it.width > 0 && it.height > 0 }
+            ?.let { "   ${it.width}×${it.height}" } ?: ""
+        val label = "${document.width}×${document.height}   ${(viewport.zoom * 100).roundToInt()}%   ${toolFor(altSampling).displayName.lowercase()}$selInfo$frameInfo"
         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
         g2.font = UIUtil.getLabelFont()
         val fm = g2.fontMetrics
@@ -643,5 +841,8 @@ class ImageCanvas(
 
         // Leaves a small margin around a framed animation frame so its border stays visible.
         private const val FRAME_FIT_SCALE = 0.92
+
+        private const val SELECTION_ANIM_MS = 50
+        private const val SELECTION_DASH_PERIOD = 8
     }
 }
