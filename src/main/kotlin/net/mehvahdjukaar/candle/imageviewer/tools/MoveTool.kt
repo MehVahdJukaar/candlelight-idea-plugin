@@ -19,7 +19,7 @@ class MoveTool : Tool {
 
     override val id = "move"
     override val displayName = "Move"
-    override val description = "Move the selection, or the whole image if none"
+    override val description = "Move the selection (or a floating paste); with none, the whole layer"
     override val icon: Icon = ToolIcons.MOVE
     override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
 

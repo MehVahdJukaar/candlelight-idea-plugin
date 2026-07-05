@@ -1,22 +1,29 @@
 package net.mehvahdjukaar.candle.imageviewer
 
-import java.awt.AlphaComposite
 import java.awt.Color
 import java.awt.Rectangle
-import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import kotlin.math.abs
 
 /**
- * The editable image model: the pixel buffer (always ARGB), the current selection, an undo/redo
- * history, and the primitive mutation operations. It has no notion of view transform or tools.
+ * The editable image model: a [LayerStack], selection, undo/redo, and pixel operations. Tools talk
+ * to this class; the canvas owns view state and routes input.
  *
- * Pixel mutations fire [onContentChanged]; selection changes do not (selecting is not a file edit).
+ * Pixel mutations fire [onContentChanged]; selection and paste-placement moves do not.
  */
 class ImageDocument(source: BufferedImage) {
 
-    var image: BufferedImage = source.toArgb()
-        private set
+    private val stack = LayerStack(source)
+    private var cachedComposite: BufferedImage? = null
+
+    /** Flattened view of visible layers — used for save and palette scans. */
+    val image: BufferedImage
+        get() {
+            cachedComposite?.let { return it }
+            return stack.flatten().also { cachedComposite = it }
+        }
+
+    val layerStack: LayerStack get() = stack
 
     /** Active selection in image-pixel coordinates, or null for "whole image". */
     var selection: Rectangle? = null
@@ -25,72 +32,200 @@ class ImageDocument(source: BufferedImage) {
             onSelectionChanged?.invoke()
         }
 
-    /** Invoked whenever the pixels change (draw, erase, move, undo, redo) — i.e. a real edit. */
     var onContentChanged: (() -> Unit)? = null
-
-    /** Invoked whenever the selection changes (not a file edit), so the UI can refresh copy/cut state. */
     var onSelectionChanged: (() -> Unit)? = null
-
-    /** Invoked whenever the image's width/height changes (crop/resize, or an undo/redo of one). */
     var onDimensionsChanged: (() -> Unit)? = null
+    /** Fired when a paste layer moves — repaint only, not a file edit. */
+    var onOverlayChanged: (() -> Unit)? = null
+    var onLayersChanged: (() -> Unit)? = null
 
-    private val undoStack = ArrayDeque<BufferedImage>()
-    private val redoStack = ArrayDeque<BufferedImage>()
+    private val undoStack = ArrayDeque<LayerStackSnapshot>()
+    private val redoStack = ArrayDeque<LayerStackSnapshot>()
 
-    val width: Int get() = image.width
-    val height: Int get() = image.height
+    val width: Int get() = stack.width
+    val height: Int get() = stack.height
 
     val canUndo: Boolean get() = undoStack.isNotEmpty()
     val canRedo: Boolean get() = redoStack.isNotEmpty()
 
-    // ---- history --------------------------------------------------------------------------------
+    val hasPendingPaste: Boolean get() = stack.floating != null
 
-    /** Records the current state so the next mutation can be undone. Call before a stroke/move. */
+    val activeLayerIndex: Int get() = stack.activeLayerIndex
+
+    fun layers(): List<Layer> = stack.layers()
+
+    fun setActiveLayer(index: Int) {
+        stack.setActiveLayer(index)
+        onLayersChanged?.invoke()
+    }
+
+    fun setLayerVisible(index: Int, visible: Boolean) {
+        stack.setLayerVisible(index, visible)
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+    }
+
+    fun renameLayer(index: Int, name: String) {
+        val current = layers().getOrNull(index) ?: return
+        if (name.isBlank() || current.name == name.trim()) return
+        pushUndo()
+        stack.renameLayer(index, name)
+        onLayersChanged?.invoke()
+    }
+
+    fun moveLayerUp(index: Int) {
+        pushUndo()
+        stack.moveLayerUp(index)
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+    }
+
+    fun moveLayerDown(index: Int) {
+        pushUndo()
+        stack.moveLayerDown(index)
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+    }
+
+    fun addEmptyLayer(): Int {
+        pushUndo()
+        val index = stack.addEmptyLayer()
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+        return index
+    }
+
+    fun deleteLayer(index: Int): Boolean {
+        if (stack.layerCount <= 1) return false
+        pushUndo()
+        if (!stack.deleteLayer(index)) return false
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+        return true
+    }
+
+    fun deleteActiveLayer(): Boolean = deleteLayer(activeLayerIndex)
+
     fun pushUndo() {
-        undoStack.addLast(image.copyArgb())
+        undoStack.addLast(stack.snapshot())
         while (undoStack.size > UNDO_LIMIT) undoStack.removeFirst()
         redoStack.clear()
     }
 
     fun undo() {
         if (undoStack.isEmpty()) return
-        val previous = image
-        redoStack.addLast(image.copyArgb())
-        image = undoStack.removeLast()
-        if (sizeChanged(previous)) onDimensionsChanged?.invoke()
+        val previousSize = width to height
+        redoStack.addLast(stack.snapshot())
+        stack.restore(undoStack.removeLast())
+        invalidateCache()
+        if (width to height != previousSize) onDimensionsChanged?.invoke()
+        onLayersChanged?.invoke()
         onContentChanged?.invoke()
     }
 
     fun redo() {
         if (redoStack.isEmpty()) return
-        val previous = image
-        undoStack.addLast(image.copyArgb())
-        image = redoStack.removeLast()
-        if (sizeChanged(previous)) onDimensionsChanged?.invoke()
+        val previousSize = width to height
+        undoStack.addLast(stack.snapshot())
+        stack.restore(redoStack.removeLast())
+        invalidateCache()
+        if (width to height != previousSize) onDimensionsChanged?.invoke()
+        onLayersChanged?.invoke()
         onContentChanged?.invoke()
     }
 
-    private fun sizeChanged(previous: BufferedImage): Boolean =
-        previous.width != image.width || previous.height != image.height
+    // ---- floating paste -------------------------------------------------------------------------
 
-    // ---- pixel ops ------------------------------------------------------------------------------
+    fun beginFloatingPaste(pixels: BufferedImage, x: Int, y: Int) {
+        stack.beginFloating(pixels, x, y)
+        onOverlayChanged?.invoke()
+    }
 
-    fun colorAt(x: Int, y: Int): Color? =
-        if (inBounds(x, y)) Color(image.getRGB(x, y), true) else null
+    fun moveFloating(x: Int, y: Int) {
+        stack.moveFloating(x, y)
+        onOverlayChanged?.invoke()
+    }
+
+    /** Merges the floating paste into the active layer. */
+    fun commitFloatingToActiveLayer(): Boolean {
+        if (stack.floating == null) return false
+        pushUndo()
+        stack.commitFloatingToActiveLayer()
+        invalidateCache()
+        // The overlay is gone now: let listeners drop the paste hint as well as repaint the pixels.
+        onOverlayChanged?.invoke()
+        onContentChanged?.invoke()
+        return true
+    }
+
+    /** Copies the selected region of the active layer into a new top layer at the same position. */
+    fun layerFromSelection(region: Rectangle): Boolean {
+        val r = region.intersection(Rectangle(0, 0, width, height))
+            .takeIf { it.width > 0 && it.height > 0 } ?: return false
+        pushUndo()
+        val piece = stack.copyFromActiveLayer(r)
+        stack.pasteAsNewLayer(piece, r.x, r.y)
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+        return true
+    }
+
+    /** Places clipboard content directly on a new top layer (Shift+paste). */
+    fun pasteAsNewLayer(pixels: BufferedImage, x: Int, y: Int) {
+        stack.pasteAsNewLayer(pixels, x, y)
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+    }
+
+    fun cancelFloating() {
+        if (stack.floating == null) return
+        stack.cancelFloating()
+        onOverlayChanged?.invoke()
+    }
+
+    // ---- pixel ops (active layer) ---------------------------------------------------------------
+
+    fun colorAt(x: Int, y: Int): Color? {
+        val argb = sampleComposite(x, y) ?: return null
+        return Color(argb, true)
+    }
+
+    private fun sampleComposite(x: Int, y: Int): Int? {
+        if (!inBounds(x, y)) return null
+        stack.floating?.let { f ->
+            val lx = x - f.x
+            val ly = y - f.y
+            if (lx in 0 until f.pixels.width && ly in 0 until f.pixels.height) {
+                val argb = f.pixels.getRGB(lx, ly)
+                if ((argb ushr 24) != 0) return argb
+            }
+        }
+        for (index in stack.layers().indices.reversed()) {
+            val layer = stack.layers()[index]
+            if (!layer.visible) continue
+            val argb = layer.pixels.getRGB(x, y)
+            if ((argb ushr 24) != 0) return argb
+        }
+        return null
+    }
 
     fun setPixel(x: Int, y: Int, argb: Int) {
-        if (put(x, y, argb)) onContentChanged?.invoke()
+        if (put(x, y, argb)) markContentChanged()
     }
 
-    /** Plots a line between two image-space points (Bresenham), respecting the selection. */
     fun drawLine(x0: Int, y0: Int, x1: Int, y1: Int, argb: Int) = drawBrushLine(x0, y0, x1, y1, 1, argb)
 
-    /** Stamps a [size]x[size] square of [argb] centered on ([cx], [cy]), respecting the selection. */
     fun stampBrush(cx: Int, cy: Int, size: Int, argb: Int) {
-        if (putSquare(cx, cy, size, argb)) onContentChanged?.invoke()
+        if (putSquare(cx, cy, size, argb)) markContentChanged()
     }
 
-    /** Plots a line (Bresenham) stamping a [size]x[size] square brush at every step. */
     fun drawBrushLine(x0: Int, y0: Int, x1: Int, y1: Int, size: Int, argb: Int) {
         var x = x0
         var y = y0
@@ -112,117 +247,85 @@ class ImageDocument(source: BufferedImage) {
                 y += sy
             }
         }
-        onContentChanged?.invoke()
+        markContentChanged()
     }
 
-    /** Replaces every pixel whose exact ARGB equals [target] with [replacement], within the selection. */
     fun replaceColor(target: Int, replacement: Int) {
         if (target == replacement) return
         val sel = selection
+        val layer = stack.activeLayer.pixels
         var changed = false
         for (y in 0 until height) {
             for (x in 0 until width) {
                 if (sel != null && !sel.contains(x, y)) continue
-                if (image.getRGB(x, y) == target) {
-                    image.setRGB(x, y, replacement)
+                if (layer.getRGB(x, y) == target) {
+                    layer.setRGB(x, y, replacement)
                     changed = true
                 }
             }
         }
-        if (changed) onContentChanged?.invoke()
+        if (changed) markContentChanged()
     }
 
-    /** Returns an independent ARGB copy of [region] (clamped to the image) without modifying the document. */
-    fun copyRegion(region: Rectangle): BufferedImage {
-        val r = region.intersection(Rectangle(0, 0, width, height))
-        val out = BufferedImage(r.width.coerceAtLeast(1), r.height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
-        out.createGraphics().apply {
-            drawImage(image, 0, 0, r.width, r.height, r.x, r.y, r.x + r.width, r.y + r.height, null)
-            dispose()
-        }
-        return out
-    }
+    fun copyRegion(region: Rectangle): BufferedImage = stack.copyRegion(region)
 
-    /** Copies a region into a standalone image and clears it from the document (for Move/Cut). */
     fun liftRegion(region: Rectangle): BufferedImage {
-        val lifted = copyRegion(region)
-        clearRegion(region)
+        val lifted = stack.liftFromActiveLayer(region)
+        markContentChanged()
         return lifted
     }
 
-    /** Clears [region] to transparency (eraser), clamped to the image bounds. */
     fun clearRegion(region: Rectangle) {
-        val r = region.intersection(Rectangle(0, 0, width, height))
-        if (r.isEmpty) return
-        image.createGraphics().apply {
-            composite = AlphaComposite.Clear
-            fillRect(r.x, r.y, r.width, r.height)
-            dispose()
-        }
-        onContentChanged?.invoke()
+        stack.clearActiveLayer(region)
+        markContentChanged()
     }
 
-    /** Composites [img] onto the document at ([x], [y]). */
     fun stamp(img: BufferedImage, x: Int, y: Int) {
-        image.createGraphics().apply {
-            drawImage(img, x, y, null)
-            dispose()
-        }
-        onContentChanged?.invoke()
+        stack.stampOnActiveLayer(img, x, y)
+        markContentChanged()
     }
 
     // ---- whole-image ops ------------------------------------------------------------------------
 
-    /**
-     * Replaces the whole pixel buffer with [newImage] (any size), recording undo and clearing the
-     * selection. Fires [onDimensionsChanged] when the size differs. Backing store for crop/resize.
-     */
     fun replaceImage(newImage: BufferedImage) {
-        val next = newImage.toArgb()
-        val resized = next.width != width || next.height != height
+        val resized = newImage.width != width || newImage.height != height
         pushUndo()
-        image = next
+        stack.replaceAll(newImage)
         selection = null
+        invalidateCache()
         if (resized) onDimensionsChanged?.invoke()
+        onLayersChanged?.invoke()
         onContentChanged?.invoke()
     }
 
-    /**
-     * Re-frames the image to [region] (image-pixel coordinates), keeping pixels 1:1. The region may
-     * extend outside the current bounds to *grow* the canvas — the area beyond the old image becomes
-     * transparent padding — or sit inside it to crop. A no-op if it matches the current bounds.
-     */
     fun crop(region: Rectangle) {
         val w = region.width
         val h = region.height
         if (w <= 0 || h <= 0 || w > MAX_DIMENSION || h > MAX_DIMENSION) return
         if (region.x == 0 && region.y == 0 && w == width && h == height) return
-        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-        out.createGraphics().apply {
-            drawImage(image, -region.x, -region.y, null)
-            dispose()
-        }
-        replaceImage(out)
+        pushUndo()
+        stack.cropAll(region)
+        selection = null
+        invalidateCache()
+        onDimensionsChanged?.invoke()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
     }
 
-    /** Scales the whole image to [newWidth]x[newHeight], nearest-neighbour unless [smooth]. */
     fun resizeTo(newWidth: Int, newHeight: Int, smooth: Boolean = false) {
         if (newWidth <= 0 || newHeight <= 0) return
         if (newWidth == width && newHeight == height) return
-        val out = BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_ARGB)
-        out.createGraphics().apply {
-            setRenderingHint(
-                RenderingHints.KEY_INTERPOLATION,
-                if (smooth) RenderingHints.VALUE_INTERPOLATION_BILINEAR
-                else RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR,
-            )
-            drawImage(image, 0, 0, newWidth, newHeight, null)
-            dispose()
-        }
-        replaceImage(out)
+        pushUndo()
+        stack.resizeAll(newWidth, newHeight, smooth)
+        selection = null
+        invalidateCache()
+        onDimensionsChanged?.invoke()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
     }
 
-    /** Writes a [size]x[size] square of [argb] centered on ([cx], [cy]); returns true if any pixel was set. */
+    // ---- internals ------------------------------------------------------------------------------
+
     private fun putSquare(cx: Int, cy: Int, size: Int, argb: Int): Boolean {
         if (size <= 1) return put(cx, cy, argb)
         val half = (size - 1) / 2
@@ -239,16 +342,23 @@ class ImageDocument(source: BufferedImage) {
         if (!inBounds(x, y)) return false
         val sel = selection
         if (sel != null && !sel.contains(x, y)) return false
-        image.setRGB(x, y, argb)
+        stack.activeLayer.pixels.setRGB(x, y, argb)
         return true
     }
 
     private fun inBounds(x: Int, y: Int): Boolean = x in 0 until width && y in 0 until height
 
+    private fun invalidateCache() {
+        cachedComposite = null
+    }
+
+    private fun markContentChanged() {
+        invalidateCache()
+        onContentChanged?.invoke()
+    }
+
     companion object {
         private const val UNDO_LIMIT = 40
-
-        /** Hard ceiling on a crop/resize dimension, guarding against a runaway allocation. */
         const val MAX_DIMENSION = 16384
     }
 }

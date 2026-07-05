@@ -15,7 +15,7 @@ class HandTool : Tool {
 
     override val id = "hand"
     override val displayName = "Hand"
-    override val description = "Pan the view — drag, or hold Space with any tool"
+    override val description = "Pan the view — drag, Space+drag, or Ctrl+right-drag"
     override val icon: Icon = ToolIcons.HAND
     override val cursor: Cursor = ToolCursors.hand()
 

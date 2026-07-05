@@ -80,7 +80,8 @@ class ImageCanvas(
     // Seeded from the session-shared tool so a tool picked in one image is active in the next too.
     var activeTool: Tool = tools.first { it.id == SharedEditorState.lastToolId }
         set(value) {
-            if (field.id == "select" && value.id != "select") commitPendingPaste()
+            // A pending paste rides the Move tool; leaving it merges the paste into the active layer.
+            if (field.id == "move" && value.id != "move") commitPastePlacement()
             field = value
             value.onActivated(document)
             refreshCursor()
@@ -161,13 +162,10 @@ class ImageCanvas(
     private var brushResize: BrushResize? = null
 
     /** Clipboard pixels waiting to be placed; the image underneath stays untouched until confirmed. */
-    private var pendingPaste: PendingPaste? = null
     private var pasteMoveGrab: Point? = null
     private var pasteMoveOrigin: Point? = null
 
     private class BrushResize(val anchor: Point, val startSize: Int)
-
-    private class PendingPaste(val image: java.awt.image.BufferedImage, var x: Int, var y: Int)
 
     init {
         isOpaque = true
@@ -184,6 +182,7 @@ class ImageCanvas(
             selectionListener?.invoke()
             updateSelectionAnimation()
         }
+        document.onOverlayChanged = { repaint() }
         // A crop/resize (or undo/redo of one) changes the pixel dimensions: the frame slicing no
         // longer applies, so collapse to a single frame and re-fit the newly sized image in view.
         document.onDimensionsChanged = {
@@ -222,11 +221,17 @@ class ImageCanvas(
 
             override fun mouseMoved(e: MouseEvent) {
                 hoverPoint = e.point
+                if (shouldHideCursor()) refreshCursor()
                 repaint()
+            }
+
+            override fun mouseEntered(e: MouseEvent) {
+                refreshCursor()
             }
 
             override fun mouseExited(e: MouseEvent) {
                 hoverPoint = null
+                refreshCursor()
                 repaint()
             }
         }
@@ -326,8 +331,8 @@ class ImageCanvas(
 
         // ---- selection & commit -------------------------------------------------------------
         bindKey(KeyEvent.VK_ESCAPE, 0, "deselect", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
-            if (pendingPaste != null) {
-                cancelPendingPaste()
+            if (document.hasPendingPaste) {
+                cancelPastePlacement()
                 repaint()
                 return@bindKey
             }
@@ -338,13 +343,17 @@ class ImageCanvas(
         }
         bindKey(KeyEvent.VK_ENTER, 0, "commit", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
             when {
-                commitPendingPaste() -> repaint()
+                commitPastePlacement() -> repaint()
                 activeTool.onCommit(document) -> repaint()
             }
         }
         bindKey(KeyEvent.VK_DELETE, 0, "deleteSelection", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { deleteSelection() }
         bindKey(KeyEvent.VK_BACK_SPACE, 0, "deleteSelection.backspace", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
             deleteSelection()
+        }
+        bindKey(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK, "paste", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { paste(newLayer = false) }
+        bindKey(KeyEvent.VK_V, InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK, "paste.newLayer", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) {
+            paste(newLayer = true)
         }
     }
 
@@ -360,14 +369,17 @@ class ImageCanvas(
     private fun refreshCursor() {
         cursor = when {
             spacePanning || panLast != null -> ToolCursors.hand()
+            // Alt over a paint tool samples color: show the eyedropper, even though the paint tool
+            // would otherwise hide the cursor to draw its own brush outline.
+            altSampling && activeTool.altPicksColor && strokeTool == null -> eyedropper.cursor
             shouldHideCursor() -> ToolCursors.blank()
-            altSampling && activeTool.altPicksColor -> eyedropper.cursor
             else -> activeTool.cursor
         }
     }
 
-    /** True while the OS pointer should be hidden (brush/eraser tools, or mid-stroke select drag). */
+    /** True while the OS pointer should be hidden (brush/eraser, select drag). */
     private fun shouldHideCursor(): Boolean {
+        // A floating paste is dragged with the Move tool, which keeps its move cursor visible.
         strokeTool?.let { if (it.hidesCursor || it.id == "select") return true }
         return activeTool.hidesCursor
     }
@@ -434,24 +446,24 @@ class ImageCanvas(
 
     // ---- clipboard ------------------------------------------------------------------------------
 
-    /** True while a region is selected, so copy/cut can act on it. */
-    val hasSelection: Boolean get() = document.selection != null
+    /** True while a non-empty region is selected (including a floating paste preview). */
+    val hasSelection: Boolean
+        get() = document.selection?.let { it.width > 0 && it.height > 0 } == true
 
     /** True while the shared clipboard holds an image that can be pasted. */
     val canPaste: Boolean get() = SharedEditorState.clipboard != null
 
-    /** Copies the selected region into the shared clipboard (no document change). */
+    /** Copies the selected region into the shared clipboard (includes floating overlay pixels). */
     fun copySelection() {
-        commitPendingPaste()
-        val sel = document.selection ?: return
+        val sel = document.selection?.takeIf { it.width > 0 && it.height > 0 } ?: return
         SharedEditorState.clipboard = document.copyRegion(sel)
         selectionListener?.invoke()
     }
 
     /** Copies the selected region into the shared clipboard and clears it from the image. */
     fun cutSelection() {
-        commitPendingPaste()
-        val sel = document.selection ?: return
+        commitPastePlacement()
+        val sel = document.selection?.takeIf { it.width > 0 && it.height > 0 } ?: return
         document.pushUndo()
         SharedEditorState.clipboard = document.liftRegion(sel)
         document.selection = null
@@ -460,7 +472,7 @@ class ImageCanvas(
 
     /** Erases the selected region to transparency, leaving the selection in place. */
     fun deleteSelection() {
-        if (pendingPaste != null) return
+        if (document.hasPendingPaste) return
         val sel = document.selection?.takeIf { it.width > 0 && it.height > 0 } ?: return
         document.pushUndo()
         document.clearRegion(sel)
@@ -468,41 +480,52 @@ class ImageCanvas(
     }
 
     /**
-     * Floats the clipboard over the canvas without altering pixels yet. Switches to the select tool
-     * so the placement can be dragged; Enter or switching away from select stamps it down.
+     * Floats the clipboard for placement. Enter (or leaving the select tool) merges into the active
+     * layer; Esc cancels. With [newLayer] true (Shift+paste), commits immediately to a new layer.
      */
-    fun paste() {
+    fun paste(newLayer: Boolean = false) {
         val img = SharedEditorState.clipboard ?: return
-        cancelPendingPaste()
+        if (document.hasPendingPaste) commitPastePlacement()
         val center = viewport.toImage(width / 2, height / 2)
         val x = (center.x - img.width / 2).coerceIn(0, (document.width - img.width).coerceAtLeast(0))
         val y = (center.y - img.height / 2).coerceIn(0, (document.height - img.height).coerceAtLeast(0))
-        pendingPaste = PendingPaste(img, x, y)
-        document.selection = Rectangle(x, y, img.width, img.height)
+        val bounds = Rectangle(x, y, img.width, img.height)
             .intersection(Rectangle(0, 0, document.width, document.height))
             .takeIf { it.width > 0 && it.height > 0 }
-        activeTool = tools.first { it.id == "select" }
+
+        if (newLayer) {
+            document.pushUndo()
+            document.pasteAsNewLayer(img, x, y)
+            document.selection = bounds
+            selectionListener?.invoke()
+            repaint()
+            return
+        }
+
+        // Float the paste over an untouched image and hand it to the Move tool so it can be dragged
+        // into place; Enter (or switching tools / clicking away) merges it into the active layer.
+        document.beginFloatingPaste(img, x, y)
+        document.selection = bounds
+        activeTool = tools.first { it.id == "move" }
         selectionListener?.invoke()
         repaint()
     }
 
-    /** Stamps a floating paste onto the document. Returns true if something was placed. */
-    private fun commitPendingPaste(): Boolean {
-        val paste = pendingPaste ?: return false
-        document.pushUndo()
-        document.stamp(paste.image, paste.x, paste.y)
-        document.selection = Rectangle(paste.x, paste.y, paste.image.width, paste.image.height)
-            .intersection(Rectangle(0, 0, document.width, document.height))
+    /** Merges the floating paste into the active layer. */
+    private fun commitPastePlacement(): Boolean {
+        val f = document.layerStack.floating ?: return false
+        val bounds = Rectangle(f.x, f.y, f.pixels.width, f.pixels.height)
+        document.commitFloatingToActiveLayer()
+        document.selection = bounds.intersection(Rectangle(0, 0, document.width, document.height))
             .takeIf { it.width > 0 && it.height > 0 }
-        pendingPaste = null
         pasteMoveGrab = null
         pasteMoveOrigin = null
         selectionListener?.invoke()
         return true
     }
 
-    private fun cancelPendingPaste() {
-        pendingPaste = null
+    private fun cancelPastePlacement() {
+        document.cancelFloating()
         pasteMoveGrab = null
         pasteMoveOrigin = null
         document.selection = null
@@ -636,19 +659,21 @@ class ImageCanvas(
     }
 
     private fun tryStartPendingPasteMove(e: MouseEvent): Boolean {
-        val paste = pendingPaste ?: return false
-        if (activeTool.id != "select") return false
-        val sel = document.selection ?: return false
+        val floating = document.layerStack.floating ?: return false
+        if (activeTool.id != "move") return false
+        val sel = document.selection
         val imgPt = viewport.toImage(e.x, e.y)
-        if (sel.contains(imgPt)) {
+        if (sel != null && sel.contains(imgPt)) {
             pasteMoveGrab = imgPt
-            pasteMoveOrigin = Point(paste.x, paste.y)
+            pasteMoveOrigin = Point(floating.x, floating.y)
             strokeTool = activeTool
             refreshCursor()
             return true
         }
-        cancelPendingPaste()
-        return false
+        // Clicking outside the pasted region drops it into the active layer.
+        commitPastePlacement()
+        repaint()
+        return true
     }
 
     private fun onDrag(e: MouseEvent) {
@@ -661,19 +686,21 @@ class ImageCanvas(
             return
         }
         if (pasteMoveGrab != null) {
-            val paste = pendingPaste ?: return
+            val floating = document.layerStack.floating ?: return
             val grab = pasteMoveGrab ?: return
             val origin = pasteMoveOrigin ?: return
             val imgPt = viewport.toImage(e.x, e.y)
-            paste.x = (origin.x + (imgPt.x - grab.x)).coerceIn(0, (document.width - paste.image.width).coerceAtLeast(0))
-            paste.y = (origin.y + (imgPt.y - grab.y)).coerceIn(0, (document.height - paste.image.height).coerceAtLeast(0))
-            document.selection = Rectangle(paste.x, paste.y, paste.image.width, paste.image.height)
+            val x = (origin.x + (imgPt.x - grab.x)).coerceIn(0, (document.width - floating.pixels.width).coerceAtLeast(0))
+            val y = (origin.y + (imgPt.y - grab.y)).coerceIn(0, (document.height - floating.pixels.height).coerceAtLeast(0))
+            document.moveFloating(x, y)
+            document.selection = Rectangle(x, y, floating.pixels.width, floating.pixels.height)
             clampView()
             repaint()
             return
         }
         if (!SwingUtilities.isLeftMouseButton(e)) return
         (strokeTool ?: toolFor(e.isAltDown)).onDrag(toolContext(e))
+        if (shouldHideCursor()) refreshCursor()
         clampView()
         repaint()
     }
@@ -698,15 +725,26 @@ class ImageCanvas(
         repaint()
     }
 
-    /** Right-click menu: crop (to the selection, a staged crop box, or by picking the tool) or resize. */
+    /** Right-click menu: crop, promote the selection to its own layer, or resize. */
     private fun showContextMenu(e: MouseEvent) {
         val menu = JPopupMenu()
+        val selection = document.selection?.takeIf { it.width > 0 && it.height > 0 }
         menu.add(JMenuItem("Crop").apply { addActionListener { contextCrop() } })
+        menu.add(JMenuItem("Layer from Selection").apply {
+            isEnabled = selection != null
+            addActionListener { selection?.let { layerFromSelection(it) } }
+        })
         menu.add(JMenuItem("Resize…").apply {
             isEnabled = onResizeRequested != null
             addActionListener { onResizeRequested?.invoke() }
         })
         menu.show(this, e.x, e.y)
+    }
+
+    /** Copies the current selection into a new top layer, then leaves it active for moving. */
+    private fun layerFromSelection(region: Rectangle) {
+        commitPastePlacement()
+        if (document.layerFromSelection(region)) repaint()
     }
 
     private fun contextCrop() {
@@ -751,13 +789,18 @@ class ImageCanvas(
             val showHover = !spacePanning && panLast == null &&
                 strokeTool?.let { !it.hidesCursor && it.id != "select" } != false
             if (showHover) hoverPoint?.let { previewTool.paintHover(g2, viewport, viewport.toImage(it.x, it.y)) }
-            pendingPaste?.let { paste ->
-                val r = viewport.toComponent(Rectangle(paste.x, paste.y, paste.image.width, paste.image.height))
-                g2.drawImage(paste.image, r.x, r.y, r.width, r.height, this)
+            document.layerStack.floating?.let { floating ->
+                val r = viewport.toComponent(Rectangle(floating.x, floating.y, floating.pixels.width, floating.pixels.height))
+                g2.drawImage(floating.pixels, r.x, r.y, r.width, r.height, this)
             }
             document.selection?.takeIf { it.width > 0 && it.height > 0 }?.let { sel ->
                 val viewBounds = g2.clipBounds ?: Rectangle(0, 0, width, height)
-                CanvasRender.selectionHighlight(g2, viewBounds, viewport.toComponent(sel), selectionDashPhase)
+                val viewSel = viewport.toComponent(sel)
+                if (document.hasPendingPaste) {
+                    CanvasRender.selectionOutline(g2, viewSel, selectionDashPhase)
+                } else {
+                    CanvasRender.selectionHighlight(g2, viewBounds, viewSel, selectionDashPhase)
+                }
             }
 
             paintInfo(g2)

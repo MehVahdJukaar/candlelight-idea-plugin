@@ -2,7 +2,6 @@ package net.mehvahdjukaar.candle.imageviewer.tools
 
 import java.awt.Cursor
 import java.awt.Graphics2D
-import java.awt.Point
 import java.awt.Toolkit
 import java.awt.image.BufferedImage
 import kotlin.math.min
@@ -11,46 +10,33 @@ import kotlin.math.roundToInt
 /**
  * Builds and caches custom mouse cursors for the editing tools, reusing the glyph routines from
  * [ToolIcons].
- *
- * Cursor creation is environment-sensitive (the platform may only support certain sizes, or none in
- * a headless context), so every build is wrapped in a try/catch that falls back to a predefined
- * cursor and never throws. Built cursors are cached, since constructing a [BufferedImage] and
- * calling the toolkit on every property access would be wasteful.
  */
 object ToolCursors {
 
-    /** A hotspot expressed in the [GLYPH_GRID] authoring grid, later scaled to the cursor size. */
     private data class GridHotspot(val x: Float, val y: Float)
 
     private val cache = HashMap<String, Cursor>()
 
     private val crosshair: Cursor get() = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
 
-    /** Eyedropper cursor, hotspot at the dropper tip (bottom-left of the glyph). */
-    fun eyedropper(): Cursor =
-        cursor("img-eyedropper", GridHotspot(3f, 13f), ::drawEyedropperGlyph)
+    fun eyedropper(): Cursor = cursor("img-eyedropper", GridHotspot(3f, 13f), ::drawEyedropperGlyph)
+    fun pencil(): Cursor = cursor("img-pencil", GridHotspot(3.5f, 12.5f), ::drawPencilGlyph)
+    fun eraser(): Cursor = cursor("img-eraser", GridHotspot(6.5f, 11.5f), ::drawEraserGlyph)
+    fun zoom(): Cursor = cursor("img-zoom", GridHotspot(7f, 7f), ::drawZoomGlyph)
+    fun hand(): Cursor = cursor("img-hand", GridHotspot(8f, 9f), ::drawHandGlyph)
 
-    /** Pencil cursor, hotspot at the drawing tip (bottom-left of the glyph). */
-    fun pencil(): Cursor =
-        cursor("img-pencil", GridHotspot(3.5f, 12.5f), ::drawPencilGlyph)
-
-    /** Eraser cursor, hotspot at the working tip (bottom-left of the glyph). */
-    fun eraser(): Cursor =
-        cursor("img-eraser", GridHotspot(6.5f, 11.5f), ::drawEraserGlyph)
-
-    /** Zoom cursor, hotspot at the magnifier lens center. */
-    fun zoom(): Cursor =
-        cursor("img-zoom", GridHotspot(7f, 7f), ::drawZoomGlyph)
-
-    /** Hand (pan) cursor, hotspot at the palm center. */
-    fun hand(): Cursor =
-        cursor("img-hand", GridHotspot(8f, 9f), ::drawHandGlyph)
-
-    /** Fully transparent cursor, for tools that draw their own on-canvas pointer (e.g. the brush outline). */
+    /**
+     * Fully transparent cursor for tools that draw their own on-canvas pointer. Sized to the
+     * platform's preferred cursor dimensions so Linux/Wayland actually hides the OS glyph.
+     */
     fun blank(): Cursor = cache.getOrPut("img-blank") {
         try {
-            val image = BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB)
-            Toolkit.getDefaultToolkit().createCustomCursor(image, Point(0, 0), "blank") ?: crosshair
+            val toolkit = Toolkit.getDefaultToolkit()
+            val best = toolkit.getBestCursorSize(32, 32)
+            val w = best.width.coerceAtLeast(1)
+            val h = best.height.coerceAtLeast(1)
+            val image = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+            toolkit.createCustomCursor(image, java.awt.Point(w / 2, h / 2), "img-blank") ?: crosshair
         } catch (_: Throwable) {
             crosshair
         }
@@ -64,7 +50,7 @@ object ToolCursors {
             val toolkit = Toolkit.getDefaultToolkit()
             val best = toolkit.getBestCursorSize(GLYPH_GRID * 2, GLYPH_GRID * 2)
             val size = min(best.width, best.height)
-            if (size <= 0) return crosshair // headless / unsupported
+            if (size <= 0) return crosshair
 
             val image = BufferedImage(best.width, best.height, BufferedImage.TYPE_INT_ARGB)
             val g = image.createGraphics()
@@ -79,8 +65,7 @@ object ToolCursors {
             val hx = (hotspot.x * scale).roundToInt().coerceIn(0, best.width - 1)
             val hy = (hotspot.y * scale).roundToInt().coerceIn(0, best.height - 1)
 
-            val cursor = toolkit.createCustomCursor(image, Point(hx, hy), name)
-            cursor ?: crosshair
+            toolkit.createCustomCursor(image, java.awt.Point(hx, hy), name) ?: crosshair
         } catch (_: Throwable) {
             crosshair
         }
