@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.IdeActions
 import com.intellij.openapi.actionSystem.ShortcutSet
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.project.DumbAwareAction
+import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
@@ -18,6 +19,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import net.mehvahdjukaar.candle.imageviewer.tools.Tool
+import net.mehvahdjukaar.candle.imageviewer.tools.ToolIcons
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
@@ -25,6 +27,8 @@ import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
 import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.event.InputEvent
@@ -39,6 +43,7 @@ import javax.swing.BoxLayout
 import javax.swing.ButtonGroup
 import javax.swing.Icon
 import javax.swing.JButton
+import javax.swing.JCheckBox
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -109,6 +114,7 @@ class ImageEditorPanel(
         canvas.editListener = { onContentEdited() }
         canvas.selectionListener = { refreshEditButtons() }
         canvas.onActiveToolChanged = { tool -> toolButtons[tool]?.isSelected = true }
+        canvas.onResizeRequested = { showResizeDialog() }
         canvas.onAnimationChanged = { current, count -> syncAnimationControls(current, count) }
         canvas.onPlayStateChanged = { playing -> updatePlayButton(playing) }
 
@@ -208,7 +214,8 @@ class ImageEditorPanel(
         copyButton = actionButton(AllIcons.Actions.Copy, "Copy", "Ctrl+C") { canvas.copySelection() }
         cutButton = actionButton(AllIcons.Actions.MenuCut, "Cut", "Ctrl+X") { canvas.cutSelection() }
         pasteButton = actionButton(AllIcons.Actions.MenuPaste, "Paste", "Ctrl+V") { canvas.paste() }
-        content.add(grid(listOf(undoButton, redoButton, saveButton, copyButton, cutButton, pasteButton), COLUMNS))
+        val resizeButton = actionButton(ToolIcons.RESIZE, "Resize…", "") { showResizeDialog() }
+        content.add(grid(listOf(undoButton, redoButton, saveButton, copyButton, cutButton, pasteButton, resizeButton), COLUMNS))
         content.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         content.add(sectionLabel("View"))
@@ -573,6 +580,82 @@ class ImageEditorPanel(
         return out
     }
 
+    // ---- resize ---------------------------------------------------------------------------------
+
+    private fun showResizeDialog() {
+        if (readOnly) return
+        val dialog = ResizeDialog(canvas.document.width, canvas.document.height)
+        if (dialog.showAndGet()) {
+            canvas.document.resizeTo(dialog.newWidth, dialog.newHeight, dialog.smooth)
+        }
+    }
+
+    /** Scales the whole image to a new width/height, optionally locking the aspect ratio. */
+    private inner class ResizeDialog(private val origW: Int, private val origH: Int) :
+        DialogWrapper(this@ImageEditorPanel, true) {
+
+        private val widthSpinner = JSpinner(SpinnerNumberModel(origW, 1, MAX_DIMENSION, 1))
+        private val heightSpinner = JSpinner(SpinnerNumberModel(origH, 1, MAX_DIMENSION, 1))
+        private val lockAspect = JCheckBox("Keep aspect ratio", true)
+        private val smoothBox = JCheckBox("Smooth (bilinear)", false)
+
+        // Suppresses the aspect-linking listeners while they update the other field, to avoid a loop.
+        private var syncing = false
+
+        val newWidth: Int get() = widthSpinner.value as Int
+        val newHeight: Int get() = heightSpinner.value as Int
+        val smooth: Boolean get() = smoothBox.isSelected
+
+        init {
+            title = "Resize Image"
+            widthSpinner.addChangeListener { if (lockAspect.isSelected) syncFrom(widthSpinner) }
+            heightSpinner.addChangeListener { if (lockAspect.isSelected) syncFrom(heightSpinner) }
+            smoothBox.toolTipText = "Off keeps hard pixel edges (nearest-neighbour); on blends when scaling."
+            init()
+        }
+
+        private fun syncFrom(source: JSpinner) {
+            if (syncing) return
+            syncing = true
+            try {
+                if (source === widthSpinner) {
+                    heightSpinner.value = ((newWidth.toLong() * origH) / origW).toInt().coerceIn(1, MAX_DIMENSION)
+                } else {
+                    widthSpinner.value = ((newHeight.toLong() * origW) / origH).toInt().coerceIn(1, MAX_DIMENSION)
+                }
+            } finally {
+                syncing = false
+            }
+        }
+
+        override fun createCenterPanel(): JComponent {
+            val panel = JPanel(GridBagLayout())
+            val c = GridBagConstraints().apply {
+                insets = JBUI.insets(4)
+                anchor = GridBagConstraints.WEST
+            }
+            c.gridx = 0; c.gridy = 0
+            panel.add(JLabel("Width:"), c)
+            c.gridx = 1
+            panel.add(widthSpinner, c)
+            c.gridx = 2
+            panel.add(JLabel("px"), c)
+
+            c.gridx = 0; c.gridy = 1
+            panel.add(JLabel("Height:"), c)
+            c.gridx = 1
+            panel.add(heightSpinner, c)
+            c.gridx = 2
+            panel.add(JLabel("px"), c)
+
+            c.gridx = 0; c.gridy = 2; c.gridwidth = 3
+            panel.add(lockAspect, c)
+            c.gridy = 3
+            panel.add(smoothBox, c)
+            return panel
+        }
+    }
+
     /** Paints the native IntelliJ flat-toolbar background (hover / pressed) behind an icon button. */
     private fun paintFlatBackground(g: Graphics, button: AbstractButton, selected: Boolean) {
         val model = button.model
@@ -640,14 +723,17 @@ class ImageEditorPanel(
 
     companion object {
         private const val BUTTON_SIZE = 30
-        private const val COLUMNS = 3
+        private const val COLUMNS = 4
         private const val MAX_PALETTE = 48
         private const val MAX_SCAN = 200_000L
 
         private val SHORTCUTS = mapOf(
             "pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E",
-            "recolor" to "G", "zoom" to "Z", "hand" to "H",
+            "recolor" to "G", "crop" to "C", "zoom" to "Z", "hand" to "H",
         )
+
+        // Upper bound for the resize dialog's width/height fields.
+        private const val MAX_DIMENSION = 8192
 
         private val SAVED_COLOR = JBColor(Color(0x3C, 0x8B, 0x3C), Color(0x59, 0xA8, 0x69))
         private val UNSAVED_COLOR = JBColor(Color(0xB8, 0x6A, 0x00), Color(0xD8, 0x95, 0x16))

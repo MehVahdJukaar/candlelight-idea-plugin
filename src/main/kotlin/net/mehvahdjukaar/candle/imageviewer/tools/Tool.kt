@@ -55,9 +55,28 @@ interface Tool {
      */
     val hidesCursor: Boolean get() = false
 
+    /**
+     * Called when this tool becomes the active one, so it can seed transient state from the document
+     * (e.g. the crop tool adopting the current selection as its starting rectangle). Not called for
+     * the initially-selected tool at startup.
+     */
+    fun onActivated(document: ImageDocument) {}
+
     fun onPress(ctx: ToolContext) {}
     fun onDrag(ctx: ToolContext) {}
     fun onRelease(ctx: ToolContext) {}
+
+    /**
+     * Applies any pending gesture (e.g. the crop tool commits its rectangle). Called on Enter or a
+     * double-click. Returns true if something was committed, so the caller can repaint.
+     */
+    fun onCommit(document: ImageDocument): Boolean = false
+
+    /**
+     * Discards any pending gesture (e.g. the crop tool clears its rectangle). Called on Escape before
+     * the canvas falls back to clearing the selection. Returns true if something was cancelled.
+     */
+    fun onCancel(document: ImageDocument): Boolean = false
 
     /** Optional transient overlay drawn on top of the image (component-space graphics). */
     fun paintOverlay(g: Graphics2D, viewport: Viewport) {}

@@ -3,6 +3,7 @@ package net.mehvahdjukaar.candle.imageviewer
 import java.awt.AlphaComposite
 import java.awt.Color
 import java.awt.Rectangle
+import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import kotlin.math.abs
 
@@ -30,6 +31,9 @@ class ImageDocument(source: BufferedImage) {
     /** Invoked whenever the selection changes (not a file edit), so the UI can refresh copy/cut state. */
     var onSelectionChanged: (() -> Unit)? = null
 
+    /** Invoked whenever the image's width/height changes (crop/resize, or an undo/redo of one). */
+    var onDimensionsChanged: (() -> Unit)? = null
+
     private val undoStack = ArrayDeque<BufferedImage>()
     private val redoStack = ArrayDeque<BufferedImage>()
 
@@ -50,17 +54,24 @@ class ImageDocument(source: BufferedImage) {
 
     fun undo() {
         if (undoStack.isEmpty()) return
+        val previous = image
         redoStack.addLast(image.copyArgb())
         image = undoStack.removeLast()
+        if (sizeChanged(previous)) onDimensionsChanged?.invoke()
         onContentChanged?.invoke()
     }
 
     fun redo() {
         if (redoStack.isEmpty()) return
+        val previous = image
         undoStack.addLast(image.copyArgb())
         image = redoStack.removeLast()
+        if (sizeChanged(previous)) onDimensionsChanged?.invoke()
         onContentChanged?.invoke()
     }
+
+    private fun sizeChanged(previous: BufferedImage): Boolean =
+        previous.width != image.width || previous.height != image.height
 
     // ---- pixel ops ------------------------------------------------------------------------------
 
@@ -135,14 +146,20 @@ class ImageDocument(source: BufferedImage) {
     /** Copies a region into a standalone image and clears it from the document (for Move/Cut). */
     fun liftRegion(region: Rectangle): BufferedImage {
         val lifted = copyRegion(region)
+        clearRegion(region)
+        return lifted
+    }
+
+    /** Clears [region] to transparency (eraser), clamped to the image bounds. */
+    fun clearRegion(region: Rectangle) {
         val r = region.intersection(Rectangle(0, 0, width, height))
+        if (r.isEmpty) return
         image.createGraphics().apply {
             composite = AlphaComposite.Clear
             fillRect(r.x, r.y, r.width, r.height)
             dispose()
         }
         onContentChanged?.invoke()
-        return lifted
     }
 
     /** Composites [img] onto the document at ([x], [y]). */
@@ -152,6 +169,57 @@ class ImageDocument(source: BufferedImage) {
             dispose()
         }
         onContentChanged?.invoke()
+    }
+
+    // ---- whole-image ops ------------------------------------------------------------------------
+
+    /**
+     * Replaces the whole pixel buffer with [newImage] (any size), recording undo and clearing the
+     * selection. Fires [onDimensionsChanged] when the size differs. Backing store for crop/resize.
+     */
+    fun replaceImage(newImage: BufferedImage) {
+        val next = newImage.toArgb()
+        val resized = next.width != width || next.height != height
+        pushUndo()
+        image = next
+        selection = null
+        if (resized) onDimensionsChanged?.invoke()
+        onContentChanged?.invoke()
+    }
+
+    /**
+     * Re-frames the image to [region] (image-pixel coordinates), keeping pixels 1:1. The region may
+     * extend outside the current bounds to *grow* the canvas — the area beyond the old image becomes
+     * transparent padding — or sit inside it to crop. A no-op if it matches the current bounds.
+     */
+    fun crop(region: Rectangle) {
+        val w = region.width
+        val h = region.height
+        if (w <= 0 || h <= 0 || w > MAX_DIMENSION || h > MAX_DIMENSION) return
+        if (region.x == 0 && region.y == 0 && w == width && h == height) return
+        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        out.createGraphics().apply {
+            drawImage(image, -region.x, -region.y, null)
+            dispose()
+        }
+        replaceImage(out)
+    }
+
+    /** Scales the whole image to [newWidth]x[newHeight], nearest-neighbour unless [smooth]. */
+    fun resizeTo(newWidth: Int, newHeight: Int, smooth: Boolean = false) {
+        if (newWidth <= 0 || newHeight <= 0) return
+        if (newWidth == width && newHeight == height) return
+        val out = BufferedImage(newWidth, newHeight, BufferedImage.TYPE_INT_ARGB)
+        out.createGraphics().apply {
+            setRenderingHint(
+                RenderingHints.KEY_INTERPOLATION,
+                if (smooth) RenderingHints.VALUE_INTERPOLATION_BILINEAR
+                else RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR,
+            )
+            drawImage(image, 0, 0, newWidth, newHeight, null)
+            dispose()
+        }
+        replaceImage(out)
     }
 
     /** Writes a [size]x[size] square of [argb] centered on ([cx], [cy]); returns true if any pixel was set. */
@@ -179,6 +247,9 @@ class ImageDocument(source: BufferedImage) {
 
     companion object {
         private const val UNDO_LIMIT = 40
+
+        /** Hard ceiling on a crop/resize dimension, guarding against a runaway allocation. */
+        const val MAX_DIMENSION = 16384
     }
 }
 
