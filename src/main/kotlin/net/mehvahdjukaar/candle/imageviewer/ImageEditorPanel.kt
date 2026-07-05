@@ -98,6 +98,7 @@ class ImageEditorPanel(
 
     private val paletteWidget = PaletteWidget()
     private val colorPicker = ColorPickerWidget(canvas.currentColor)
+    private lateinit var layersPanel: LayersPanel
 
     // Rescanning the image on every painted pixel would be wasteful, so coalesce edits.
     private val paletteTimer = Timer(250) { refreshPalette() }.apply { isRepeats = false }
@@ -156,7 +157,7 @@ class ImageEditorPanel(
             bindShortcut(it, { canvas.hasSelection }) { canvas.cutSelection() }
         }
         ActionManager.getInstance().getAction(IdeActions.ACTION_PASTE)?.shortcutSet?.let {
-            bindShortcut(it, { canvas.canPaste }) { canvas.paste() }
+            bindShortcut(it, { canvas.canPaste }) { canvas.paste(newLayer = false) }
         }
         // Bind Ctrl+S explicitly: the IDE's "Save All" action has no default keymap shortcut
         // (autosave makes it unnecessary), so relying on its shortcutSet would bind nothing.
@@ -186,43 +187,52 @@ class ImageEditorPanel(
             border = JBUI.Borders.empty(6, 5)
         }
 
-        content.add(sectionLabel("Palette"))
-        content.add(leftAligned(paletteWidget))
-        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+        content.add(CollapsibleSection("Palette", body = CollapsibleSection.body(paletteWidget)))
+        content.add(CollapsibleSection.verticalGap())
 
-        content.add(sectionLabel("Color"))
-        content.add(leftAligned(colorPicker))
+        content.add(CollapsibleSection("Color", body = CollapsibleSection.body(colorPicker)))
+        content.add(CollapsibleSection.verticalGap())
 
-        content.add(sectionLabel("Tools"))
+        layersPanel = LayersPanel().also { panel ->
+            panel.bind(canvas.document)
+            panel.onLayerActivated = { canvas.repaint() }
+            canvas.document.onLayersChanged = { panel.refresh() }
+            canvas.document.onOverlayChanged = { canvas.repaint() }
+        }
+        content.add(CollapsibleSection("Layers", body = CollapsibleSection.fullWidthBody(layersPanel)))
+        content.add(CollapsibleSection.verticalGap())
+
         val group = ButtonGroup()
         val toolBtns = canvas.tools.map { tool -> toolButton(tool, group).also { toolButtons[tool] = it } }
-        content.add(grid(toolBtns, COLUMNS))
-        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+        content.add(CollapsibleSection("Tools", body = CollapsibleSection.body(grid(toolBtns, COLUMNS))))
+        content.add(CollapsibleSection.verticalGap())
 
-        content.add(sectionLabel("Brush size"))
-        content.add(leftAligned(buildBrushSlider()))
-        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+        content.add(CollapsibleSection("Brush size", body = CollapsibleSection.body(buildBrushSlider())))
+        content.add(CollapsibleSection.verticalGap())
 
-        content.add(sectionLabel("Animation"))
-        content.add(leftAligned(buildAnimationSection()))
-        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+        content.add(CollapsibleSection("Animation", collapsedInitially = true, body = CollapsibleSection.body(buildAnimationSection())))
+        content.add(CollapsibleSection.verticalGap())
 
-        content.add(sectionLabel("Edit"))
         undoButton = actionButton(AllIcons.Actions.Undo, "Undo", "Ctrl+Z") { canvas.document.undo() }
         redoButton = actionButton(AllIcons.Actions.Redo, "Redo", "Ctrl+Shift+Z") { canvas.document.redo() }
         saveButton = actionButton(AllIcons.Actions.MenuSaveall, "Save", "Ctrl+S") { save() }
         copyButton = actionButton(AllIcons.Actions.Copy, "Copy", "Ctrl+C") { canvas.copySelection() }
         cutButton = actionButton(AllIcons.Actions.MenuCut, "Cut", "Ctrl+X") { canvas.cutSelection() }
-        pasteButton = actionButton(AllIcons.Actions.MenuPaste, "Paste", "Ctrl+V") { canvas.paste() }
+        pasteButton = actionButton(AllIcons.Actions.MenuPaste, "Paste", "Ctrl+V · Shift+Ctrl+V new layer") { canvas.paste(newLayer = false) }
         val resizeButton = actionButton(ToolIcons.RESIZE, "Resize…", "") { showResizeDialog() }
-        content.add(grid(listOf(undoButton, redoButton, saveButton, copyButton, cutButton, pasteButton, resizeButton), COLUMNS))
-        content.add(Box.createVerticalStrut(JBUI.scale(8)))
+        content.add(CollapsibleSection(
+            "Edit",
+            body = CollapsibleSection.body(grid(listOf(undoButton, redoButton, saveButton, copyButton, cutButton, pasteButton, resizeButton), COLUMNS)),
+        ))
+        content.add(CollapsibleSection.verticalGap())
 
-        content.add(sectionLabel("View"))
         val zoomOutBtn = actionButton(AllIcons.General.ZoomOut, "Zoom Out", "−") { canvas.zoomOut() }
         val zoomInBtn = actionButton(AllIcons.General.ZoomIn, "Zoom In", "+") { canvas.zoomIn() }
         val fitBtn = actionButton(AllIcons.General.FitContent, "Fit & Center", "0") { canvas.fitToWindow() }
-        content.add(grid(listOf(zoomOutBtn, zoomInBtn, fitBtn), COLUMNS))
+        content.add(CollapsibleSection(
+            "View",
+            body = CollapsibleSection.body(grid(listOf(zoomOutBtn, zoomInBtn, fitBtn), COLUMNS)),
+        ))
 
         return JBScrollPane(
             content,
@@ -403,13 +413,6 @@ class ImageEditorPanel(
             components.forEach { add(it) }
         }
 
-    private fun sectionLabel(text: String): JComponent = JLabel(text).apply {
-        alignmentX = Component.LEFT_ALIGNMENT
-        font = JBUI.Fonts.miniFont()
-        foreground = JBColor.GRAY
-        border = JBUI.Borders.empty(2, 1)
-    }
-
     private fun toolButton(tool: Tool, group: ButtonGroup): JToggleButton =
         ToolToggleButton(tool.icon).apply {
             toolTipText = tooltip(tool.displayName, SHORTCUTS[tool.id], tool.description)
@@ -494,6 +497,8 @@ class ImageEditorPanel(
         updateSaveState(clean = matchesSaved())
         refreshEditButtons()
         paletteTimer.restart()
+        // Keep the layer thumbnails in sync with the pixels the edit just changed.
+        if (::layersPanel.isInitialized) layersPanel.repaint()
     }
 
     private fun snapshotOf(img: BufferedImage): IntArray =
