@@ -733,7 +733,7 @@ class ImageEditorPanel(
         private const val MAX_SCAN = 200_000L
 
         private val SHORTCUTS = mapOf(
-            "pick" to "I", "select" to "M", "move" to "V", "pencil" to "B", "eraser" to "E",
+            "pick" to "I", "select" to "M", "move" to "V", "transform" to "T", "pencil" to "B", "eraser" to "E",
             "recolor" to "G", "crop" to "C", "zoom" to "Z", "hand" to "H",
         )
 

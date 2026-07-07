@@ -29,6 +29,7 @@ object ToolIcons {
     val HAND: Icon = load("hand")
     val CROP: Icon = load("crop")
     val RESIZE: Icon = load("resize")
+    val TRANSFORM: Icon = load("transform")
 
     private fun load(name: String): Icon = IconLoader.getIcon("/icons/imageviewer/$name.svg", javaClass)
 }

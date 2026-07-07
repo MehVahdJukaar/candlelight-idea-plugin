@@ -21,10 +21,9 @@ class PencilTool(private val erase: Boolean) : Tool {
     override val description =
         if (erase) "Erase pixels to transparent" else "Draw pixels with the foreground color"
     override val icon: Icon = if (erase) ToolIcons.ERASER else ToolIcons.PENCIL
-    // A native crosshair marks the brush centre; the hover outline shows the footprint that will be
-    // painted. (Custom/transparent cursors don't render reliably on every compositor, so we use the
-    // OS-provided crosshair, which always shows and is precise.)
-    override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
+    // TEST: temporarily reuse the eyedropper's custom cursor for the brush/eraser to see how it
+    // renders. (Normally a native crosshair, since custom cursors don't render reliably everywhere.)
+    override val cursor: Cursor = ToolCursors.eyedropper()
     override val altPicksColor = true
 
     /** Side length, in image pixels, of the square brush. Shared by the canvas's brush-size slider. */
