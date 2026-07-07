@@ -24,6 +24,23 @@ object ToolCursors {
     fun eraser(): Cursor = cursor("img-eraser", GridHotspot(6.5f, 11.5f), ::drawEraserGlyph)
     fun zoom(): Cursor = cursor("img-zoom", GridHotspot(7f, 7f), ::drawZoomGlyph)
     fun hand(): Cursor = cursor("img-hand", GridHotspot(8f, 9f), ::drawHandGlyph)
+    fun dot(): Cursor = cursor("img-dot", GridHotspot(8f, 8f), ::drawDotGlyph)
+    fun bucket(): Cursor = cursor("img-bucket", GridHotspot(7.5f, 13f), ::drawBucketGlyph)
+    fun rotate(): Cursor = cursor("img-rotate", GridHotspot(8f, 8f), ::drawRotateGlyph)
+
+    /** Predefined directional resize cursor for a transform handle at ([hx], [hy]) in -1/0/1. */
+    fun resize(hx: Int, hy: Int): Cursor = Cursor.getPredefinedCursor(
+        when {
+            hx < 0 && hy < 0 -> Cursor.NW_RESIZE_CURSOR
+            hx > 0 && hy < 0 -> Cursor.NE_RESIZE_CURSOR
+            hx < 0 && hy > 0 -> Cursor.SW_RESIZE_CURSOR
+            hx > 0 && hy > 0 -> Cursor.SE_RESIZE_CURSOR
+            hy < 0 -> Cursor.N_RESIZE_CURSOR
+            hy > 0 -> Cursor.S_RESIZE_CURSOR
+            hx < 0 -> Cursor.W_RESIZE_CURSOR
+            else -> Cursor.E_RESIZE_CURSOR
+        },
+    )
 
     /**
      * Fully transparent cursor for tools that draw their own on-canvas pointer. Sized to the

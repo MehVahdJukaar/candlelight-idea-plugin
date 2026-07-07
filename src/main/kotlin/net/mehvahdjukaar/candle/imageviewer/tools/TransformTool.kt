@@ -31,9 +31,11 @@ import kotlin.math.roundToInt
  */
 class TransformTool : Tool {
 
-    override val id = "transform"
-    override val displayName = "Transform"
-    override val description = "Stretch the selection with its handles; drag outside a corner to rotate 90°"
+    // Keeps the "move" id so the canvas's paste-placement integration (which keys off it) still works;
+    // this single tool now moves, stretches and rotates — Move and Transform merged into one.
+    override val id = "move"
+    override val displayName = "Move"
+    override val description = "Move, stretch or rotate the selection or layer; modifier+corner rotates 90°"
     override val icon: Icon = ToolIcons.TRANSFORM
     override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
 
@@ -74,6 +76,8 @@ class TransformTool : Tool {
 
     /** Stage a transform box over the shared selection (or whole layer) without lifting pixels yet. */
     private fun arm(document: ImageDocument) {
+        // A floating paste is dragged by the canvas's own placement logic, not transformed; leave it be.
+        if (document.hasPendingPaste) return
         val region = (document.selection ?: Rectangle(0, 0, document.width, document.height))
             .intersection(Rectangle(0, 0, document.width, document.height))
         if (region.isEmpty) return
@@ -167,20 +171,48 @@ class TransformTool : Tool {
         dest = Rectangle(origDest.x + dx, origDest.y + dy, origDest.width, origDest.height)
     }
 
+    /**
+     * Scales [origDest] so the grabbed handle follows the pointer. Photoshop modifiers apply: Alt
+     * scales symmetrically about the centre, and Shift constrains proportions (corners scale
+     * uniformly; an edge scales the other axis to match). Implemented as a scale about a fixed anchor.
+     */
     private fun resizeBy(ctx: ToolContext) {
-        var left = origDest.x
-        var top = origDest.y
-        var right = origDest.x + origDest.width
-        var bottom = origDest.y + origDest.height
+        val base = origDest
         val p = ctx.imagePoint
-        if (handleX < 0) left = p.x else if (handleX > 0) right = p.x
-        if (handleY < 0) top = p.y else if (handleY > 0) bottom = p.y
-        dest = Rectangle(
-            min(left, right),
-            min(top, bottom),
-            abs(right - left).coerceAtLeast(1),
-            abs(bottom - top).coerceAtLeast(1),
-        )
+        val cx = base.x + base.width / 2.0
+        val cy = base.y + base.height / 2.0
+
+        // Fixed point of the scale: the centre with Alt, else the edge/corner opposite the handle.
+        val ax = when { ctx.altDown -> cx; handleX > 0 -> base.x.toDouble(); handleX < 0 -> (base.x + base.width).toDouble(); else -> cx }
+        val ay = when { ctx.altDown -> cy; handleY > 0 -> base.y.toDouble(); handleY < 0 -> (base.y + base.height).toDouble(); else -> cy }
+        // Base position of the grabbed edge (its distance from the anchor sets the scale reference).
+        val gx = when { handleX > 0 -> (base.x + base.width).toDouble(); handleX < 0 -> base.x.toDouble(); else -> cx }
+        val gy = when { handleY > 0 -> (base.y + base.height).toDouble(); handleY < 0 -> base.y.toDouble(); else -> cy }
+
+        var sx = if (handleX != 0) (p.x - ax) / (gx - ax) else 1.0
+        var sy = if (handleY != 0) (p.y - ay) / (gy - ay) else 1.0
+
+        if (ctx.shiftDown) {
+            when {
+                handleX != 0 && handleY != 0 -> {
+                    val s = maxOf(abs(sx), abs(sy))
+                    sx = if (sx < 0) -s else s
+                    sy = if (sy < 0) -s else s
+                }
+                handleX != 0 -> sy = abs(sx)
+                handleY != 0 -> sx = abs(sy)
+            }
+        }
+
+        val nl = ax + (base.x - ax) * sx
+        val nr = ax + (base.x + base.width - ax) * sx
+        val nt = ay + (base.y - ay) * sy
+        val nb = ay + (base.y + base.height - ay) * sy
+        val x0 = min(nl, nr).roundToInt()
+        val x1 = max(nl, nr).roundToInt()
+        val y0 = min(nt, nb).roundToInt()
+        val y1 = max(nt, nb).roundToInt()
+        dest = Rectangle(x0, y0, (x1 - x0).coerceAtLeast(1), (y1 - y0).coerceAtLeast(1))
     }
 
     private fun rotateBy(ctx: ToolContext) {
@@ -195,13 +227,29 @@ class TransformTool : Tool {
         dest = Rectangle((centerX - w / 2.0).roundToInt(), (centerY - h / 2.0).roundToInt(), w, h)
     }
 
+    override val hasDynamicCursor = true
+
+    override fun cursorAt(viewport: Viewport, componentPoint: Point, shiftDown: Boolean, ctrlDown: Boolean): Cursor? {
+        if (dest.isEmpty) return null
+        val c = viewport.toComponent(dest)
+        handleAt(c, componentPoint)?.let { (hx, hy) ->
+            // Ctrl over a corner rotates instead of resizing, so preview the rotate cursor.
+            if (hx != 0 && hy != 0 && ctrlDown) return ToolCursors.rotate()
+            return ToolCursors.resize(hx, hy)
+        }
+        if (c.contains(componentPoint)) return Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
+        if (distanceToRect(c, componentPoint) <= JBUI.scale(ROTATE_RING)) return ToolCursors.rotate()
+        return null
+    }
+
     /** Which gesture a press at [ctx] starts, given an already-staged box. */
     private fun resolveMode(ctx: ToolContext): Mode {
         val c = ctx.viewport.toComponent(dest)
-        handleAt(c, ctx)?.let { (hx, hy) ->
-            // Dragging a corner while holding a modifier rotates (snapped to 90°); Photoshop also
-            // rotates from the ring just outside the box, handled below.
-            if (hx != 0 && hy != 0 && (ctx.ctrlDown || ctx.shiftDown)) return Mode.ROTATE
+        handleAt(c, ctx.componentPoint)?.let { (hx, hy) ->
+            // Ctrl+corner rotates (snapped to 90°) for when the box fills the view and the outer ring
+            // is out of reach; Photoshop also rotates from the ring just outside the box (below).
+            // Shift/Alt are reserved for constrain-proportions / scale-from-centre while resizing.
+            if (hx != 0 && hy != 0 && ctx.ctrlDown) return Mode.ROTATE
             handleX = hx
             handleY = hy
             return Mode.RESIZE
@@ -211,14 +259,14 @@ class TransformTool : Tool {
         return Mode.NONE
     }
 
-    /** Which handle of [c] (component space) sits under the cursor, as (x,y) in -1/0/1, or null. */
-    private fun handleAt(c: Rectangle, ctx: ToolContext): Pair<Int, Int>? {
+    /** Which handle of [c] (component space) sits under [p], as (x,y) in -1/0/1, or null. */
+    private fun handleAt(c: Rectangle, p: Point): Pair<Int, Int>? {
         val tol = JBUI.scale(HANDLE_HIT)
         for (hy in -1..1) {
             for (hx in -1..1) {
                 if (hx == 0 && hy == 0) continue
                 val hp = handlePoint(c, hx, hy)
-                if (abs(ctx.componentPoint.x - hp.x) <= tol && abs(ctx.componentPoint.y - hp.y) <= tol) {
+                if (abs(p.x - hp.x) <= tol && abs(p.y - hp.y) <= tol) {
                     return hx to hy
                 }
             }
