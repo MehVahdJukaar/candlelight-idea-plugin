@@ -10,6 +10,7 @@ import net.mehvahdjukaar.candle.imageviewer.tools.MoveTool
 import net.mehvahdjukaar.candle.imageviewer.tools.PencilTool
 import net.mehvahdjukaar.candle.imageviewer.tools.RecolorTool
 import net.mehvahdjukaar.candle.imageviewer.tools.SelectTool
+import net.mehvahdjukaar.candle.imageviewer.tools.TransformTool
 import net.mehvahdjukaar.candle.imageviewer.tools.Tool
 import net.mehvahdjukaar.candle.imageviewer.tools.ToolContext
 import net.mehvahdjukaar.candle.imageviewer.tools.ToolCursors
@@ -73,7 +74,7 @@ class ImageCanvas(
     var onPlayStateChanged: ((Boolean) -> Unit)? = null
 
     val tools: List<Tool> = listOf(
-        EyedropperTool(), SelectTool(), MoveTool(), PencilTool(erase = false), PencilTool(erase = true),
+        EyedropperTool(), SelectTool(), MoveTool(), TransformTool(), PencilTool(erase = false), PencilTool(erase = true),
         RecolorTool(), CropTool(), ZoomTool(), HandTool(),
     )
 
@@ -82,12 +83,15 @@ class ImageCanvas(
         set(value) {
             // A pending paste rides the Move tool; leaving it merges the paste into the active layer.
             if (field.id == "move" && value.id != "move") commitPastePlacement()
+            if (field !== value) field.onDeactivated(document)
             field = value
             value.onActivated(document)
             refreshCursor()
             // Don't echo a change we're applying from another editor's broadcast, or it would loop.
             if (!applyingSharedTool) SharedEditorState.setTool(value.id)
             onActiveToolChanged?.invoke(value)
+            // A tool may stage an overlay on activation (e.g. the transform box); show it right away.
+            repaint()
         }
 
     /** True while applying a tool change broadcast by another editor, so we don't re-broadcast it. */
@@ -145,6 +149,11 @@ class ImageCanvas(
     var onResizeRequested: (() -> Unit)? = null
 
     private var panLast: Point? = null
+
+    // Wheel-pan axis lock: a scroll gesture commits to one axis (x or y) on its first tick and keeps
+    // it until the scrolling pauses, so a diagonal trackpad swipe never drifts into a mix of both.
+    private var lastWheelPanNanos = 0L
+    private var wheelPanHorizontal = false
 
     /** Mouse position (component space) while hovering, for the active tool's hover preview. */
     private var hoverPoint: Point? = null
@@ -272,12 +281,17 @@ class ImageCanvas(
                 // trackpads (many small events) move proportionally less per tick.
                 val factor = WHEEL_ZOOM_STEP.pow(-e.preciseWheelRotation)
                 viewport.zoomAt(e.x.toDouble(), e.y.toDouble(), factor)
-            } else if (e.isShiftDown) {
-                // Shift + wheel pans horizontally, matching most image editors.
-                viewport.pan(-e.preciseWheelRotation * WHEEL_PAN_STEP, 0.0)
             } else {
-                // A plain wheel pans vertically; scrolling up moves the view up.
-                viewport.pan(0.0, -e.preciseWheelRotation * WHEEL_PAN_STEP)
+                // Pan on one axis only. Shift picks horizontal (like most image editors), but once a
+                // scroll gesture starts we keep its axis until it pauses, so a diagonal trackpad swipe
+                // never turns into a diagonal pan.
+                val now = System.nanoTime()
+                val horizontal =
+                    if (now - lastWheelPanNanos < WHEEL_GESTURE_GAP_NS) wheelPanHorizontal else e.isShiftDown
+                lastWheelPanNanos = now
+                wheelPanHorizontal = horizontal
+                val delta = -e.preciseWheelRotation * WHEEL_PAN_STEP
+                if (horizontal) viewport.pan(delta, 0.0) else viewport.pan(0.0, delta)
             }
             clampView()
             repaint()
@@ -304,6 +318,7 @@ class ImageCanvas(
         bindKey(KeyEvent.VK_I, 0, "tool.pick", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pick") }
         bindKey(KeyEvent.VK_M, 0, "tool.select", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("select") }
         bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("move") }
+        bindKey(KeyEvent.VK_T, 0, "tool.transform", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("transform") }
         bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pencil") }
         bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("eraser") }
         bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("recolor") }
@@ -619,7 +634,7 @@ class ImageCanvas(
     // ---- input ----------------------------------------------------------------------------------
 
     private fun toolContext(e: MouseEvent) =
-        ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, e.isShiftDown, currentColor, ::setCurrentColor)
+        ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, e.isShiftDown, e.isControlDown, currentColor, ::setCurrentColor)
 
     /** Middle-click, Space+left-drag, or Ctrl+right-drag — all pan the view without editing. */
     private fun isPanGesture(e: MouseEvent): Boolean =
@@ -873,8 +888,11 @@ class ImageCanvas(
         // zooms ~10% rather than 20%, taming fast/high-resolution wheels and trackpads.
         private const val WHEEL_ZOOM_STEP = 1.1
 
-        // Pixels panned per shift+wheel notch and per arrow-key press.
-        private const val WHEEL_PAN_STEP = 40.0
+        // Pixels panned per wheel notch (kept gentle so scrolling nudges the view rather than flings it).
+        private const val WHEEL_PAN_STEP = 24.0
+        // A scroll gesture keeps its locked pan axis until this long passes with no wheel event.
+        private const val WHEEL_GESTURE_GAP_NS = 250_000_000L
+        // Pixels panned per arrow-key press.
         private const val PAN_STEP = 40
 
         // How many pixels of the image must always stay visible so it can never be lost off-screen.

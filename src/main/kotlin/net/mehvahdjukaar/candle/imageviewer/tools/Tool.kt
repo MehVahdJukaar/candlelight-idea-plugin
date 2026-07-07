@@ -19,6 +19,7 @@ class ToolContext(
     val componentPoint: Point,
     val altDown: Boolean,
     val shiftDown: Boolean,
+    val ctrlDown: Boolean,
     val color: Color,
     val setColor: (Color) -> Unit,
 )
@@ -62,6 +63,12 @@ interface Tool {
      * the initially-selected tool at startup.
      */
     fun onActivated(document: ImageDocument) {}
+
+    /**
+     * Called when this tool stops being the active one, so it can bake or drop any staged gesture
+     * (e.g. the transform tool commits its floating buffer rather than leaving lifted pixels behind).
+     */
+    fun onDeactivated(document: ImageDocument) {}
 
     fun onPress(ctx: ToolContext) {}
     fun onDrag(ctx: ToolContext) {}
