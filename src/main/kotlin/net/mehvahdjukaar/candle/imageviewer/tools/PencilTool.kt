@@ -21,20 +21,23 @@ class PencilTool(private val erase: Boolean) : Tool {
     override val description =
         if (erase) "Erase pixels to transparent" else "Draw pixels with the foreground color"
     override val icon: Icon = if (erase) ToolIcons.ERASER else ToolIcons.PENCIL
-    override val cursor: Cursor = if (erase) ToolCursors.eraser() else ToolCursors.pencil()
+    // A native crosshair marks the brush centre; the hover outline shows the footprint that will be
+    // painted. (Custom/transparent cursors don't render reliably on every compositor, so we use the
+    // OS-provided crosshair, which always shows and is precise.)
+    override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
     override val altPicksColor = true
-
-    // The brush outline (paintHover) is the pointer, so the OS cursor would just be redundant clutter.
-    override val hidesCursor = true
 
     /** Side length, in image pixels, of the square brush. Shared by the canvas's brush-size slider. */
     var brushSize: Int = 1
 
     private var last: Point? = null
+    /** First point of the current stroke; the axis to snap to while Shift-constraining is measured from it. */
+    private var anchor: Point? = null
 
     override fun onPress(ctx: ToolContext) {
         ctx.document.pushUndo()
         last = null
+        anchor = ctx.imagePoint
         paint(ctx)
     }
 
@@ -42,15 +45,26 @@ class PencilTool(private val erase: Boolean) : Tool {
 
     override fun onRelease(ctx: ToolContext) {
         last = null
+        anchor = null
     }
 
     private fun paint(ctx: ToolContext) {
-        val p = ctx.imagePoint
+        val p = constrain(ctx.imagePoint, ctx.shiftDown)
         val argb = if (erase) 0 else ctx.color.rgb
         val from = last
         if (from == null) ctx.document.stampBrush(p.x, p.y, brushSize, argb)
         else ctx.document.drawBrushLine(from.x, from.y, p.x, p.y, brushSize, argb)
         last = p
+    }
+
+    /**
+     * With Shift held, locks the stroke to a straight line by snapping [p] onto the horizontal or
+     * vertical axis through the stroke's [anchor] (whichever the drag is closer to), Photoshop-style.
+     */
+    private fun constrain(p: Point, shiftDown: Boolean): Point {
+        val a = anchor
+        if (!shiftDown || a == null) return p
+        return if (Math.abs(p.x - a.x) >= Math.abs(p.y - a.y)) Point(p.x, a.y) else Point(a.x, p.y)
     }
 
     override fun paintHover(g: Graphics2D, viewport: Viewport, hover: Point) {
