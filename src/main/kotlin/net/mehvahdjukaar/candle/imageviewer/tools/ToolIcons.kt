@@ -106,6 +106,33 @@ internal fun drawZoomGlyph(g: Graphics2D) {
     g.draw(Line2D.Float(5.0f, 7.0f, 9.0f, 7.0f))
 }
 
+/** Small filled dot centred on the grid, marking the exact pixel under the brush. */
+internal fun drawDotGlyph(g: Graphics2D) {
+    // Antialiasing would leave a tiny dot as only faint, partial-alpha pixels, which the 1-bit X11
+    // cursor mask drops entirely (it renders as nothing). Draw it hard-edged so the core stays opaque.
+    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF)
+    g.fill(java.awt.geom.Ellipse2D.Float(6f, 6f, 4f, 4f))
+}
+
+/** Paint bucket: an upright pail with a rim, handle and tapering body — the fill/recolor tool. */
+internal fun drawBucketGlyph(g: Graphics2D) {
+    g.stroke = thin(1.2f)
+    g.draw(java.awt.geom.Arc2D.Float(5f, 2.5f, 6f, 5f, 20f, 140f, java.awt.geom.Arc2D.OPEN)) // handle
+    g.draw(java.awt.geom.Ellipse2D.Float(3.5f, 3.5f, 9f, 3f))                                // rim
+    g.draw(Line2D.Float(3.7f, 5.0f, 5.5f, 13.0f))                                            // left side
+    g.draw(Line2D.Float(12.3f, 5.0f, 10.5f, 13.0f))                                          // right side
+    g.draw(Line2D.Float(5.5f, 13.0f, 10.5f, 13.0f))                                          // bottom
+}
+
+/** Circular arrow, marking the rotate handles of the transform box. */
+internal fun drawRotateGlyph(g: Graphics2D) {
+    g.stroke = thin(1.3f)
+    g.draw(java.awt.geom.Arc2D.Float(4f, 4f, 8f, 8f, 35f, 285f, java.awt.geom.Arc2D.OPEN)) // open ring
+    g.stroke = thin(1.2f)
+    g.draw(Line2D.Float(11.1f, 3.7f, 12.6f, 5.4f)) // chevron arrowhead near the gap
+    g.draw(Line2D.Float(12.6f, 5.4f, 10.4f, 6.0f))
+}
+
 /**
  * Prepare [g] for cursor-glyph drawing: antialiasing, pure strokes, the theme [GLYPH_COLOR] and a
  * unit scale that maps the [GLYPH_GRID] authoring grid onto [targetPx] device pixels.

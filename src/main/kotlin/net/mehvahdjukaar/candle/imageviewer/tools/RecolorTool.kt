@@ -1,5 +1,6 @@
 package net.mehvahdjukaar.candle.imageviewer.tools
 
+import java.awt.Cursor
 import javax.swing.Icon
 
 /**
@@ -12,6 +13,7 @@ class RecolorTool : Tool {
     override val displayName = "Recolor"
     override val description = "Replace all pixels of the clicked color with the foreground color"
     override val icon: Icon = ToolIcons.RECOLOR
+    override val cursor: Cursor = ToolCursors.bucket()
     override val altPicksColor = true
 
     override fun onPress(ctx: ToolContext) {

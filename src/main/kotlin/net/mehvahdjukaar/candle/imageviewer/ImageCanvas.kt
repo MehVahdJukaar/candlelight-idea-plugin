@@ -6,16 +6,16 @@ import com.intellij.util.ui.UIUtil
 import net.mehvahdjukaar.candle.imageviewer.tools.CropTool
 import net.mehvahdjukaar.candle.imageviewer.tools.EyedropperTool
 import net.mehvahdjukaar.candle.imageviewer.tools.HandTool
-import net.mehvahdjukaar.candle.imageviewer.tools.MoveTool
 import net.mehvahdjukaar.candle.imageviewer.tools.PencilTool
 import net.mehvahdjukaar.candle.imageviewer.tools.RecolorTool
 import net.mehvahdjukaar.candle.imageviewer.tools.SelectTool
-import net.mehvahdjukaar.candle.imageviewer.tools.TransformTool
 import net.mehvahdjukaar.candle.imageviewer.tools.Tool
 import net.mehvahdjukaar.candle.imageviewer.tools.ToolContext
 import net.mehvahdjukaar.candle.imageviewer.tools.ToolCursors
+import net.mehvahdjukaar.candle.imageviewer.tools.TransformTool
 import net.mehvahdjukaar.candle.imageviewer.tools.ZoomTool
 import java.awt.Color
+import java.awt.Cursor
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.Point
@@ -24,6 +24,7 @@ import java.awt.RenderingHints
 import java.awt.event.ActionEvent
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.awt.event.HierarchyEvent
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
@@ -74,12 +75,13 @@ class ImageCanvas(
     var onPlayStateChanged: ((Boolean) -> Unit)? = null
 
     val tools: List<Tool> = listOf(
-        EyedropperTool(), SelectTool(), MoveTool(), TransformTool(), PencilTool(erase = false), PencilTool(erase = true),
+        EyedropperTool(), SelectTool(), TransformTool(), PencilTool(erase = false), PencilTool(erase = true),
         RecolorTool(), CropTool(), ZoomTool(), HandTool(),
     )
 
     // Seeded from the session-shared tool so a tool picked in one image is active in the next too.
-    var activeTool: Tool = tools.first { it.id == SharedEditorState.lastToolId }
+    var activeTool: Tool = tools.firstOrNull { it.id == SharedEditorState.lastToolId }
+        ?: tools.first { it.id == "pencil" }
         set(value) {
             // A pending paste rides the Move tool; leaving it merges the paste into the active layer.
             if (field.id == "move" && value.id != "move") commitPastePlacement()
@@ -155,6 +157,10 @@ class ImageCanvas(
     private var lastWheelPanNanos = 0L
     private var wheelPanHorizontal = false
 
+    // Live Shift/Ctrl state, so a dynamic-cursor tool (transform) can preview a modified gesture.
+    private var shiftDown = false
+    private var ctrlDown = false
+
     /** Mouse position (component space) while hovering, for the active tool's hover preview. */
     private var hoverPoint: Point? = null
 
@@ -182,6 +188,17 @@ class ImageCanvas(
         // Route through refreshCursor() so the initial tool (a brush) hides the OS cursor too,
         // instead of showing its glyph cursor until the next tool switch.
         refreshCursor()
+
+        // Wayland quirk: the startup tool's custom cursor is applied here, before the canvas has a
+        // native surface, and doesn't stick — the pointer stays a plain arrow until you switch tools.
+        // Once we're actually shown, re-apply it, toggling through the default first so it forces a
+        // fresh native upload rather than being skipped as "already this cursor".
+        addHierarchyListener { e ->
+            if (e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong() != 0L && isShowing) {
+                cursor = Cursor.getDefaultCursor()
+                refreshCursor()
+            }
+        }
 
         document.onContentChanged = {
             editListener?.invoke()
@@ -230,7 +247,9 @@ class ImageCanvas(
 
             override fun mouseMoved(e: MouseEvent) {
                 hoverPoint = e.point
-                if (shouldHideCursor()) refreshCursor()
+                shiftDown = e.isShiftDown
+                ctrlDown = e.isControlDown
+                if (shouldHideCursor() || activeTool.hasDynamicCursor) refreshCursor()
                 repaint()
             }
 
@@ -253,6 +272,9 @@ class ImageCanvas(
                 when (e.keyCode) {
                     KeyEvent.VK_SPACE -> if (!spacePanning) { spacePanning = true; refreshCursor() }
                     KeyEvent.VK_ALT -> if (!altSampling) { altSampling = true; refreshCursor(); repaint() }
+                    // Pressing a modifier can flip a dynamic-cursor tool between resize and rotate.
+                    KeyEvent.VK_SHIFT -> { shiftDown = true; if (activeTool.hasDynamicCursor) refreshCursor() }
+                    KeyEvent.VK_CONTROL -> { ctrlDown = true; if (activeTool.hasDynamicCursor) refreshCursor() }
                 }
             }
 
@@ -260,6 +282,8 @@ class ImageCanvas(
                 when (e.keyCode) {
                     KeyEvent.VK_SPACE -> { spacePanning = false; refreshCursor() }
                     KeyEvent.VK_ALT -> { altSampling = false; refreshCursor(); repaint() }
+                    KeyEvent.VK_SHIFT -> { shiftDown = false; if (activeTool.hasDynamicCursor) refreshCursor() }
+                    KeyEvent.VK_CONTROL -> { ctrlDown = false; if (activeTool.hasDynamicCursor) refreshCursor() }
                 }
             }
         })
@@ -318,7 +342,8 @@ class ImageCanvas(
         bindKey(KeyEvent.VK_I, 0, "tool.pick", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pick") }
         bindKey(KeyEvent.VK_M, 0, "tool.select", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("select") }
         bindKey(KeyEvent.VK_V, 0, "tool.move", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("move") }
-        bindKey(KeyEvent.VK_T, 0, "tool.transform", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("transform") }
+        // T is kept as an alias for the merged move/transform tool.
+        bindKey(KeyEvent.VK_T, 0, "tool.transform", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("move") }
         bindKey(KeyEvent.VK_B, 0, "tool.pencil", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("pencil") }
         bindKey(KeyEvent.VK_E, 0, "tool.eraser", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("eraser") }
         bindKey(KeyEvent.VK_G, 0, "tool.recolor", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { selectTool("recolor") }
@@ -391,7 +416,8 @@ class ImageCanvas(
             // would otherwise hide the cursor to draw its own brush outline.
             altSampling && activeTool.altPicksColor && strokeTool == null -> eyedropper.cursor
             shouldHideCursor() -> ToolCursors.blank()
-            else -> activeTool.cursor
+            // A tool may vary its cursor by hover position (e.g. transform's resize/rotate handles).
+            else -> hoverPoint?.let { activeTool.cursorAt(viewport, it, shiftDown, ctrlDown) } ?: activeTool.cursor
         }
     }
 

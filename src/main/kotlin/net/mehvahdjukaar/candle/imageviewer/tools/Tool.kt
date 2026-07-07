@@ -46,6 +46,20 @@ interface Tool {
     val cursor: Cursor get() = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
 
     /**
+     * True if the cursor depends on where the pointer is (e.g. the transform tool shows resize/rotate
+     * cursors over its handles), so the canvas re-queries [cursorAt] on every mouse move.
+     */
+    val hasDynamicCursor: Boolean get() = false
+
+    /**
+     * The cursor to show at [componentPoint] (component space), or null to use the plain [cursor].
+     * [shiftDown]/[ctrlDown] carry the live modifier state so a tool can preview a modified gesture
+     * (e.g. transform showing the rotate cursor over a corner while a modifier is held). Only
+     * consulted when [hasDynamicCursor] is true.
+     */
+    fun cursorAt(viewport: Viewport, componentPoint: Point, shiftDown: Boolean, ctrlDown: Boolean): Cursor? = null
+
+    /**
      * True if holding Alt should temporarily switch to the eyedropper while this tool is active,
      * Photoshop-style. Set on color-painting tools (pencil, eraser, recolor).
      */

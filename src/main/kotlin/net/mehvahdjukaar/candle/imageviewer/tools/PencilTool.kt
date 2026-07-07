@@ -21,9 +21,10 @@ class PencilTool(private val erase: Boolean) : Tool {
     override val description =
         if (erase) "Erase pixels to transparent" else "Draw pixels with the foreground color"
     override val icon: Icon = if (erase) ToolIcons.ERASER else ToolIcons.PENCIL
-    // TEST: temporarily reuse the eyedropper's custom cursor for the brush/eraser to see how it
-    // renders. (Normally a native crosshair, since custom cursors don't render reliably everywhere.)
-    override val cursor: Cursor = ToolCursors.eyedropper()
+    // Each tool needs its OWN cursor instance: reusing one cached Cursor across two tools makes the
+    // shared native cursor misrender on Wayland (both fall back to the arrow). The pencil marks the
+    // exact pixel with a small dot; the eraser keeps its own glyph.
+    override val cursor: Cursor = if (erase) ToolCursors.eraser() else ToolCursors.dot()
     override val altPicksColor = true
 
     /** Side length, in image pixels, of the square brush. Shared by the canvas's brush-size slider. */
