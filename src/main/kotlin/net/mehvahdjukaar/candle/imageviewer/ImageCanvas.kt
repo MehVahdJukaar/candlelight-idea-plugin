@@ -267,14 +267,17 @@ class ImageCanvas(
         })
 
         addMouseWheelListener { e ->
-            if (e.isShiftDown) {
+            if (e.isControlDown) {
+                // Ctrl + wheel zooms toward the pointer. Scale the step by the precise rotation so
+                // trackpads (many small events) move proportionally less per tick.
+                val factor = WHEEL_ZOOM_STEP.pow(-e.preciseWheelRotation)
+                viewport.zoomAt(e.x.toDouble(), e.y.toDouble(), factor)
+            } else if (e.isShiftDown) {
                 // Shift + wheel pans horizontally, matching most image editors.
                 viewport.pan(-e.preciseWheelRotation * WHEEL_PAN_STEP, 0.0)
             } else {
-                // Scale the step by the precise rotation so trackpads (many small events) move
-                // proportionally less per tick rather than a full zoom step each time.
-                val factor = WHEEL_ZOOM_STEP.pow(-e.preciseWheelRotation)
-                viewport.zoomAt(e.x.toDouble(), e.y.toDouble(), factor)
+                // A plain wheel pans vertically; scrolling up moves the view up.
+                viewport.pan(0.0, -e.preciseWheelRotation * WHEEL_PAN_STEP)
             }
             clampView()
             repaint()
@@ -616,7 +619,7 @@ class ImageCanvas(
     // ---- input ----------------------------------------------------------------------------------
 
     private fun toolContext(e: MouseEvent) =
-        ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, currentColor, ::setCurrentColor)
+        ToolContext(document, viewport, viewport.toImage(e.x, e.y), e.point, e.isAltDown, e.isShiftDown, currentColor, ::setCurrentColor)
 
     /** Middle-click, Space+left-drag, or Ctrl+right-drag — all pan the view without editing. */
     private fun isPanGesture(e: MouseEvent): Boolean =
@@ -730,9 +733,13 @@ class ImageCanvas(
         val menu = JPopupMenu()
         val selection = document.selection?.takeIf { it.width > 0 && it.height > 0 }
         menu.add(JMenuItem("Crop").apply { addActionListener { contextCrop() } })
-        menu.add(JMenuItem("Layer from Selection").apply {
+        menu.add(JMenuItem("Copy to New Layer").apply {
             isEnabled = selection != null
-            addActionListener { selection?.let { layerFromSelection(it) } }
+            addActionListener { selection?.let { layerFromSelection(it, cut = false) } }
+        })
+        menu.add(JMenuItem("Cut to New Layer").apply {
+            isEnabled = selection != null
+            addActionListener { selection?.let { layerFromSelection(it, cut = true) } }
         })
         menu.add(JMenuItem("Resize…").apply {
             isEnabled = onResizeRequested != null
@@ -741,10 +748,10 @@ class ImageCanvas(
         menu.show(this, e.x, e.y)
     }
 
-    /** Copies the current selection into a new top layer, then leaves it active for moving. */
-    private fun layerFromSelection(region: Rectangle) {
+    /** Copies (or cuts) the current selection into a new top layer, left active for moving. */
+    private fun layerFromSelection(region: Rectangle, cut: Boolean) {
         commitPastePlacement()
-        if (document.layerFromSelection(region)) repaint()
+        if (document.layerFromSelection(region, cut)) repaint()
     }
 
     private fun contextCrop() {

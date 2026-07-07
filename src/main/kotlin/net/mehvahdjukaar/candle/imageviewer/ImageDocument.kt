@@ -163,12 +163,18 @@ class ImageDocument(source: BufferedImage) {
         return true
     }
 
-    /** Copies the selected region of the active layer into a new top layer at the same position. */
-    fun layerFromSelection(region: Rectangle): Boolean {
+    /**
+     * Promotes the selected region of the active layer into a new top layer at the same position.
+     * With [cut] = true the pixels are removed from the source layer (leaving transparency); with
+     * [cut] = false they are duplicated, leaving the source untouched.
+     */
+    fun layerFromSelection(region: Rectangle, cut: Boolean): Boolean {
         val r = region.intersection(Rectangle(0, 0, width, height))
             .takeIf { it.width > 0 && it.height > 0 } ?: return false
         pushUndo()
         val piece = stack.copyFromActiveLayer(r)
+        // Clear from the source layer while it is still the active one, before adding the new layer.
+        if (cut) stack.clearActiveLayer(r)
         stack.pasteAsNewLayer(piece, r.x, r.y)
         invalidateCache()
         onLayersChanged?.invoke()
