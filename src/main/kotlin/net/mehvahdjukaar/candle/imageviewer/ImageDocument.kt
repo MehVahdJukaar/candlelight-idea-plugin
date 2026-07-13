@@ -4,7 +4,11 @@ import java.awt.Color
 import java.awt.Rectangle
 import java.awt.image.BufferedImage
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * The editable image model: a [LayerStack], selection, undo/redo, and pixel operations. Tools talk
@@ -327,6 +331,180 @@ class ImageDocument(source: BufferedImage) {
     }
 
     /**
+     * Rewrites the active layer by applying a Photoshop-style brightness/contrast to every opaque
+     * pixel of [base]: contrast pivots each channel around 128 by a factor derived from [contrast]
+     * (-1..1), then [brightness] (-1..1, i.e. ±255) shifts it. Honors the active selection; alpha is
+     * preserved.
+     */
+    fun applyBrightnessContrast(base: BufferedImage, brightness: Float, contrast: Float) {
+        val sel = selection
+        val layer = stack.activeLayer.pixels
+        val c = contrast.coerceIn(-1f, 1f) * 255f
+        val factor = (259f * (c + 255f)) / (255f * (259f - c))
+        val briShift = brightness.coerceIn(-1f, 1f) * 255f
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (sel != null && !sel.contains(x, y)) continue
+                val argb = base.getRGB(x, y)
+                val a = (argb ushr 24) and 0xFF
+                if (a == 0) {
+                    layer.setRGB(x, y, argb)
+                    continue
+                }
+                val r = adjustChannel((argb ushr 16) and 0xFF, factor, briShift)
+                val g = adjustChannel((argb ushr 8) and 0xFF, factor, briShift)
+                val b = adjustChannel(argb and 0xFF, factor, briShift)
+                layer.setRGB(x, y, (a shl 24) or (r shl 16) or (g shl 8) or b)
+            }
+        }
+        markContentChanged()
+    }
+
+    private fun adjustChannel(v: Int, factor: Float, briShift: Float): Int =
+        (factor * (v - 128f) + 128f + briShift).roundToInt().coerceIn(0, 255)
+
+    /**
+     * Overlays a two-color gradient onto every opaque pixel of [base]: linear along [angleDeg] or
+     * [radial] from the region center, spanning the active selection (or the whole image) times
+     * [scale], blended by [opacity] and each gradient color's own alpha. The layer's own alpha is
+     * kept, so the overlay only tints existing content. Honors the active selection.
+     */
+    fun applyGradientOverlay(
+        base: BufferedImage,
+        color1: Color,
+        color2: Color,
+        radial: Boolean,
+        angleDeg: Double,
+        scale: Double,
+        opacity: Float,
+    ) {
+        val sel = selection
+        val layer = stack.activeLayer.pixels
+        val region = sel ?: Rectangle(0, 0, width, height)
+        val cx = region.x + region.width / 2.0
+        val cy = region.y + region.height / 2.0
+        val s = scale.coerceAtLeast(0.01)
+        val op = opacity.coerceIn(0f, 1f)
+
+        val ang = Math.toRadians(angleDeg)
+        val dx = cos(ang)
+        val dy = sin(ang)
+        // Half the region's span projected onto the gradient axis (so scale 1 fills the region).
+        val linHalfSpan = ((abs(region.width * dx) + abs(region.height * dy)) / 2.0).coerceAtLeast(0.5)
+        val radius = (hypot(region.width.toDouble(), region.height.toDouble()) / 2.0).coerceAtLeast(0.5)
+
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (sel != null && !sel.contains(x, y)) continue
+                val argb = base.getRGB(x, y)
+                val a = (argb ushr 24) and 0xFF
+                if (a == 0) {
+                    layer.setRGB(x, y, argb)
+                    continue
+                }
+                val t = if (radial) {
+                    (hypot(x + 0.5 - cx, y + 0.5 - cy) / (radius * s)).coerceIn(0.0, 1.0)
+                } else {
+                    val proj = (x + 0.5 - cx) * dx + (y + 0.5 - cy) * dy
+                    (0.5 + proj / (2.0 * linHalfSpan * s)).coerceIn(0.0, 1.0)
+                }
+                val eff = op * (lerp(color1.alpha, color2.alpha, t) / 255f)
+                val nr = blend((argb ushr 16) and 0xFF, lerp(color1.red, color2.red, t), eff)
+                val ng = blend((argb ushr 8) and 0xFF, lerp(color1.green, color2.green, t), eff)
+                val nb = blend(argb and 0xFF, lerp(color1.blue, color2.blue, t), eff)
+                layer.setRGB(x, y, (a shl 24) or (nr shl 16) or (ng shl 8) or nb)
+            }
+        }
+        markContentChanged()
+    }
+
+    private fun lerp(a: Int, b: Int, t: Double): Int = (a + (b - a) * t).roundToInt()
+
+    private fun blend(src: Int, top: Int, alpha: Float): Int =
+        (src * (1f - alpha) + top * alpha).roundToInt().coerceIn(0, 255)
+
+    /**
+     * Adds a soft outer glow around the active layer's content: the silhouette of [base] is feathered
+     * outward by [radius] pixels (a blurred alpha field) and composited behind the pixels in [color],
+     * scaled by [intensity] (0..1) and the color's alpha. The glow is clipped to the layer bounds.
+     * Ignores the selection (it works on the whole layer silhouette).
+     */
+    fun applyOuterGlow(base: BufferedImage, color: Color, radius: Int, intensity: Float) {
+        val layer = stack.activeLayer.pixels
+        val n = width * height
+        val srcArgb = IntArray(n)
+        base.getRGB(0, 0, width, height, srcArgb, 0, width)
+        val srcA = FloatArray(n) { ((srcArgb[it] ushr 24) and 0xFF) / 255f }
+
+        val glow = boxBlurAlpha(srcA, width, height, radius.coerceAtLeast(1))
+
+        val gi = intensity.coerceIn(0f, 1f)
+        val gr = color.red
+        val gg = color.green
+        val gb = color.blue
+        val gColorAlpha = color.alpha / 255f
+        val out = IntArray(n)
+        for (i in 0 until n) {
+            val sa = srcA[i]
+            val ga = (glow[i] * GLOW_GAIN).coerceIn(0f, 1f) * gi * gColorAlpha
+            if (ga <= 0f) {
+                out[i] = srcArgb[i]
+                continue
+            }
+            // Source OVER glow (the glow sits behind the layer content).
+            val outA = sa + ga * (1f - sa)
+            if (outA <= 0f) {
+                out[i] = 0
+                continue
+            }
+            val w2 = ga * (1f - sa)
+            val or = (((((srcArgb[i] ushr 16) and 0xFF) * sa + gr * w2) / outA)).roundToInt().coerceIn(0, 255)
+            val og = (((((srcArgb[i] ushr 8) and 0xFF) * sa + gg * w2) / outA)).roundToInt().coerceIn(0, 255)
+            val ob = ((((srcArgb[i] and 0xFF) * sa + gb * w2) / outA)).roundToInt().coerceIn(0, 255)
+            val oa = (outA * 255f).roundToInt().coerceIn(0, 255)
+            out[i] = (oa shl 24) or (or shl 16) or (og shl 8) or ob
+        }
+        layer.setRGB(0, 0, width, height, out, 0, width)
+        markContentChanged()
+    }
+
+    /** Three box-blur passes over an alpha field (a fast Gaussian approximation), clamping at edges. */
+    private fun boxBlurAlpha(src: FloatArray, w: Int, h: Int, radius: Int): FloatArray {
+        var buf = src.copyOf()
+        val tmp = FloatArray(src.size)
+        repeat(3) {
+            boxBlurH(buf, tmp, w, h, radius)
+            boxBlurV(tmp, buf, w, h, radius)
+        }
+        return buf
+    }
+
+    private fun boxBlurH(src: FloatArray, dst: FloatArray, w: Int, h: Int, r: Int) {
+        val div = (2 * r + 1).toFloat()
+        for (y in 0 until h) {
+            val row = y * w
+            var sum = 0f
+            for (i in -r..r) sum += src[row + i.coerceIn(0, w - 1)]
+            for (x in 0 until w) {
+                dst[row + x] = sum / div
+                sum += src[row + (x + r + 1).coerceIn(0, w - 1)] - src[row + (x - r).coerceIn(0, w - 1)]
+            }
+        }
+    }
+
+    private fun boxBlurV(src: FloatArray, dst: FloatArray, w: Int, h: Int, r: Int) {
+        val div = (2 * r + 1).toFloat()
+        for (x in 0 until w) {
+            var sum = 0f
+            for (i in -r..r) sum += src[(i.coerceIn(0, h - 1)) * w + x]
+            for (y in 0 until h) {
+                dst[y * w + x] = sum / div
+                sum += src[(y + r + 1).coerceIn(0, h - 1) * w + x] - src[(y - r).coerceIn(0, h - 1) * w + x]
+            }
+        }
+    }
+
+    /**
      * Tight bounds (image space) of the active layer's non-transparent pixels, or null when the layer
      * is fully transparent. Used to arm the move/transform box around a layer's actual content rather
      * than the whole canvas.
@@ -444,6 +622,9 @@ class ImageDocument(source: BufferedImage) {
     companion object {
         private const val UNDO_LIMIT = 40
         const val MAX_DIMENSION = 16384
+
+        // Boosts the blurred silhouette so an outer glow reads at full strength near the edge.
+        private const val GLOW_GAIN = 2.2f
     }
 }
 

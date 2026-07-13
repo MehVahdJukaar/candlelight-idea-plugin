@@ -34,6 +34,7 @@ import javax.swing.AbstractAction
 import javax.swing.JComponent
 import javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT
 import javax.swing.JComponent.WHEN_FOCUSED
+import javax.swing.JMenu
 import javax.swing.JMenuItem
 import javax.swing.JPopupMenu
 import javax.swing.KeyStroke
@@ -355,6 +356,14 @@ class ImageCanvas(
         // ---- brush size ---------------------------------------------------------------------
         bindKey(KeyEvent.VK_OPEN_BRACKET, 0, "brush.smaller", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { brushSize-- }
         bindKey(KeyEvent.VK_CLOSE_BRACKET, 0, "brush.larger", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { brushSize++ }
+
+        // ---- adjustments (Photoshop-style; Ctrl+U matches its Hue/Saturation) ----------------
+        val ctrl = InputEvent.CTRL_DOWN_MASK
+        val ctrlShift = InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK
+        bindKey(KeyEvent.VK_U, ctrl, "adjust.hsb", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { openAdjust(HsbImageAdjuster()) }
+        bindKey(KeyEvent.VK_B, ctrlShift, "adjust.brightnessContrast", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { openAdjust(BrightnessContrastAdjuster()) }
+        bindKey(KeyEvent.VK_G, ctrlShift, "adjust.gradient", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { openAdjust(GradientOverlayProcedure()) }
+        bindKey(KeyEvent.VK_O, ctrlShift, "adjust.outerGlow", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { openAdjust(OuterGlowProcedure()) }
 
         // ---- zoom ---------------------------------------------------------------------------
         bindKey(KeyEvent.VK_0, 0, "fit", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { fitToWindow() }
@@ -819,12 +828,24 @@ class ImageCanvas(
             addActionListener { onResizeRequested?.invoke() }
         })
         menu.addSeparator()
-        val adjustLabel = if (selection != null) "Hue / Saturation / Brightness… (selection)"
-        else "Hue / Saturation / Brightness…"
-        menu.add(JMenuItem(adjustLabel).apply {
-            addActionListener { HsbImageAdjuster.show(this@ImageCanvas, e.x, e.y, document, ::repaint) }
-        })
+        val adjust = JMenu(if (selection != null) "Adjustments (selection)" else "Adjustments")
+        adjust.add(adjustItem("Hue / Saturation / Brightness…", "Ctrl+U", e.x, e.y) { HsbImageAdjuster() })
+        adjust.add(adjustItem("Brightness / Contrast…", "Ctrl+Shift+B", e.x, e.y) { BrightnessContrastAdjuster() })
+        adjust.add(adjustItem("Gradient Overlay…", "Ctrl+Shift+G", e.x, e.y) { GradientOverlayProcedure() })
+        adjust.add(adjustItem("Outer Glow…", "Ctrl+Shift+O", e.x, e.y) { OuterGlowProcedure() })
+        menu.add(adjust)
         menu.show(this, e.x, e.y)
+    }
+
+    /** A context-menu item that opens an adjust [procedure] at (x, y); [hint] shows its shortcut. */
+    private fun adjustItem(label: String, hint: String, x: Int, y: Int, procedure: () -> LayerAdjustProcedure) =
+        JMenuItem("$label  ($hint)").apply {
+            addActionListener { procedure().show(this@ImageCanvas, x, y, document, ::repaint) }
+        }
+
+    /** Opens an adjust procedure from a keyboard shortcut, anchored at the center of the view. */
+    private fun openAdjust(procedure: LayerAdjustProcedure) {
+        procedure.show(this, width / 2, height / 2, document, ::repaint)
     }
 
     /** Copies (or cuts) the current selection into a new top layer, left active for moving. */
