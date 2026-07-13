@@ -121,6 +121,9 @@ class ImageEditorPanel(
 
         colorPicker.onColorChanged = { canvas.setCurrentColor(it) }
         paletteWidget.onColorPicked = { canvas.setCurrentColor(it) }
+        // Right-click on a swatch opens an HSB adjuster that remaps that color across the image live.
+        paletteWidget.onAdjustBegin = { canvas.document.pushUndo() }
+        paletteWidget.onRecolor = { from, to -> canvas.document.replaceColor(from.rgb, to.rgb) }
 
         val root = JBSplitter(false, 0.24f).apply {
             firstComponent = buildDock()
@@ -187,7 +190,9 @@ class ImageEditorPanel(
             border = JBUI.Borders.empty(6, 5)
         }
 
-        content.add(CollapsibleSection("Palette", body = CollapsibleSection.body(paletteWidget)))
+        // Full-width so the swatches fill the dock horizontally (wrapping into up to MAX_ROWS rows
+        // before scrolling), rather than being pinned to the widget's narrow preferred width.
+        content.add(CollapsibleSection("Palette", body = CollapsibleSection.fullWidthBody(paletteWidget)))
         content.add(CollapsibleSection.verticalGap())
 
         content.add(CollapsibleSection("Color", body = CollapsibleSection.body(colorPicker)))
@@ -449,7 +454,7 @@ class ImageEditorPanel(
 
     private fun refreshPalette() = paletteWidget.setColors(extractPalette(canvas.document.image))
 
-    /** Distinct opaque colors in the image, most frequent first then capped, ordered by hue. */
+    /** Distinct opaque colors in the image, most frequent first then capped, ordered by luminance. */
     private fun extractPalette(img: BufferedImage): List<Color> {
         val counts = HashMap<Int, Int>()
         val total = img.width.toLong() * img.height
@@ -471,12 +476,14 @@ class ImageEditorPanel(
             .sortedByDescending { it.value }
             .take(MAX_PALETTE)
             .map { Color(it.key) }
-            .sortedWith(compareBy({ hue(it) }, { brightness(it) }))
+            .sortedWith(compareBy({ luminance(it) }, { hue(it) }))
             .toList()
     }
 
     private fun hue(c: Color) = Color.RGBtoHSB(c.red, c.green, c.blue, null)[0]
-    private fun brightness(c: Color) = Color.RGBtoHSB(c.red, c.green, c.blue, null)[2]
+
+    /** Perceptual luminance (Rec. 601), so the palette ramps from dark to light. */
+    private fun luminance(c: Color) = 0.299 * c.red + 0.587 * c.green + 0.114 * c.blue
 
     // ---- status bar -----------------------------------------------------------------------------
 

@@ -29,6 +29,8 @@
         <fileEditorProvider implementation="net.mehvahdjukaar.candle.imageviewer.ImageViewerProvider" order="first"/>
 
 
+        <colorProvider implementation="net.mehvahdjukaar.candle.color.CandleColorProvider"/>
+
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="JAVA"

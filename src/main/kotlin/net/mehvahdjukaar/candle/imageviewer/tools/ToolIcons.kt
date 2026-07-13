@@ -124,13 +124,17 @@ internal fun drawBucketGlyph(g: Graphics2D) {
     g.draw(Line2D.Float(5.5f, 13.0f, 10.5f, 13.0f))                                          // bottom
 }
 
-/** Circular arrow, marking the rotate handles of the transform box. */
+/** Circular arrow, marking rotate mode on the transform box. Drawn bold so the small cursor bitmap
+ *  keeps enough opaque pixels to render reliably on picky compositors. */
 internal fun drawRotateGlyph(g: Graphics2D) {
-    g.stroke = thin(1.3f)
-    g.draw(java.awt.geom.Arc2D.Float(4f, 4f, 8f, 8f, 35f, 285f, java.awt.geom.Arc2D.OPEN)) // open ring
-    g.stroke = thin(1.2f)
-    g.draw(Line2D.Float(11.1f, 3.7f, 12.6f, 5.4f)) // chevron arrowhead near the gap
-    g.draw(Line2D.Float(12.6f, 5.4f, 10.4f, 6.0f))
+    g.stroke = thin(2f)
+    g.draw(java.awt.geom.Arc2D.Float(3.5f, 3.5f, 9f, 9f, 70f, 250f, java.awt.geom.Arc2D.OPEN)) // open ring
+    val head = java.awt.geom.Path2D.Float()                                                    // filled arrowhead
+    head.moveTo(10.3f, 2.6f)
+    head.lineTo(13.4f, 3.4f)
+    head.lineTo(11.7f, 6.1f)
+    head.closePath()
+    g.fill(head)
 }
 
 /**

@@ -3,6 +3,7 @@ package net.mehvahdjukaar.candle.imageviewer
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import net.mehvahdjukaar.candle.imageviewer.ImageCanvas.Companion.BIG_NUDGE
 import net.mehvahdjukaar.candle.imageviewer.tools.CropTool
 import net.mehvahdjukaar.candle.imageviewer.tools.EyedropperTool
 import net.mehvahdjukaar.candle.imageviewer.tools.HandTool
@@ -300,9 +301,9 @@ class ImageCanvas(
         })
 
         addMouseWheelListener { e ->
-            if (e.isControlDown) {
-                // Ctrl + wheel zooms toward the pointer. Scale the step by the precise rotation so
-                // trackpads (many small events) move proportionally less per tick.
+            if (e.isAltDown) {
+                // Alt + wheel zooms toward the pointer (Photoshop-style). Scale the step by the precise
+                // rotation so trackpads (many small events) move proportionally less per tick.
                 val factor = WHEEL_ZOOM_STEP.pow(-e.preciseWheelRotation)
                 viewport.zoomAt(e.x.toDouble(), e.y.toDouble(), factor)
             } else {
@@ -364,12 +365,17 @@ class ImageCanvas(
         bindKey(KeyEvent.VK_EQUALS, 0, "zoomIn2", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { zoomAtCenter(ZOOM_STEP) }
         bindKey(KeyEvent.VK_MINUS, 0, "zoomOut", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { zoomAtCenter(1.0 / ZOOM_STEP) }
 
-        // ---- pan & recenter -----------------------------------------------------------------
-        val step = JBUI.scale(PAN_STEP)
-        bindKey(KeyEvent.VK_LEFT, 0, "pan.left") { pan(step, 0) }
-        bindKey(KeyEvent.VK_RIGHT, 0, "pan.right") { pan(-step, 0) }
-        bindKey(KeyEvent.VK_UP, 0, "pan.up") { pan(0, step) }
-        bindKey(KeyEvent.VK_DOWN, 0, "pan.down") { pan(0, -step) }
+        // ---- nudge / pan --------------------------------------------------------------------
+        // Arrows move a staged transform box or a floating paste one image pixel at a time (Shift = a
+        // BIG_NUDGE jump, Photoshop-style); with nothing staged to move they pan the view instead.
+        bindKey(KeyEvent.VK_LEFT, 0, "arrow.left") { nudgeOrPan(-1, 0, false) }
+        bindKey(KeyEvent.VK_RIGHT, 0, "arrow.right") { nudgeOrPan(1, 0, false) }
+        bindKey(KeyEvent.VK_UP, 0, "arrow.up") { nudgeOrPan(0, -1, false) }
+        bindKey(KeyEvent.VK_DOWN, 0, "arrow.down") { nudgeOrPan(0, 1, false) }
+        bindKey(KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK, "arrow.left.big") { nudgeOrPan(-1, 0, true) }
+        bindKey(KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK, "arrow.right.big") { nudgeOrPan(1, 0, true) }
+        bindKey(KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK, "arrow.up.big") { nudgeOrPan(0, -1, true) }
+        bindKey(KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK, "arrow.down.big") { nudgeOrPan(0, 1, true) }
         bindKey(KeyEvent.VK_HOME, 0, "recenter", WHEN_ANCESTOR_OF_FOCUSED_COMPONENT) { recenter() }
 
         // ---- selection & commit -------------------------------------------------------------
@@ -444,6 +450,32 @@ class ImageCanvas(
         viewport.pan(dx.toDouble(), dy.toDouble())
         clampView()
         repaint()
+    }
+
+    /**
+     * Arrow-key handler. Slides a floating paste, or whatever the active tool has staged (a transform
+     * box, a crop rectangle), by ([dirX],[dirY]) image pixels — one per press, or [BIG_NUDGE] with
+     * Shift. When nothing is staged to move, the arrows pan the view instead (their legacy behaviour).
+     */
+    private fun nudgeOrPan(dirX: Int, dirY: Int, big: Boolean) {
+        val d = if (big) BIG_NUDGE else 1
+        val dx = dirX * d
+        val dy = dirY * d
+        when {
+            document.hasPendingPaste -> {
+                val f = document.layerStack.floating ?: return
+                val nx = (f.x + dx).coerceIn(0, (document.width - f.pixels.width).coerceAtLeast(0))
+                val ny = (f.y + dy).coerceIn(0, (document.height - f.pixels.height).coerceAtLeast(0))
+                document.moveFloating(nx, ny)
+                document.selection = Rectangle(nx, ny, f.pixels.width, f.pixels.height)
+                repaint()
+            }
+            activeTool.onNudge(document, dx, dy) -> repaint()
+            else -> {
+                val step = JBUI.scale(PAN_STEP)
+                pan(-dirX * step, -dirY * step)
+            }
+        }
     }
 
     /** Re-centers the image at the current zoom without changing the zoom level. */
@@ -786,6 +818,12 @@ class ImageCanvas(
             isEnabled = onResizeRequested != null
             addActionListener { onResizeRequested?.invoke() }
         })
+        menu.addSeparator()
+        val adjustLabel = if (selection != null) "Hue / Saturation / Brightness… (selection)"
+        else "Hue / Saturation / Brightness…"
+        menu.add(JMenuItem(adjustLabel).apply {
+            addActionListener { HsbImageAdjuster.show(this@ImageCanvas, e.x, e.y, document, ::repaint) }
+        })
         menu.show(this, e.x, e.y)
     }
 
@@ -920,6 +958,8 @@ class ImageCanvas(
         private const val WHEEL_GESTURE_GAP_NS = 250_000_000L
         // Pixels panned per arrow-key press.
         private const val PAN_STEP = 40
+        // Image pixels a Shift+arrow nudge moves a staged transform / paste (plain arrow moves 1).
+        private const val BIG_NUDGE = 10
 
         // How many pixels of the image must always stay visible so it can never be lost off-screen.
         private const val KEEP_VISIBLE = 32

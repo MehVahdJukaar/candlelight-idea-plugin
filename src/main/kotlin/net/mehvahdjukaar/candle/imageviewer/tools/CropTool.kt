@@ -111,6 +111,13 @@ class CropTool : Tool {
         return true
     }
 
+    override fun onNudge(document: ImageDocument, dx: Int, dy: Int): Boolean {
+        // Arrow keys slide the staged crop box (which may sit past the canvas edge, so no clamping).
+        val r = rect ?: return false
+        rect = Rectangle(r.x + dx, r.y + dy, r.width, r.height)
+        return true
+    }
+
     // ---- gesture helpers ------------------------------------------------------------------------
 
     private fun moveBy(ctx: ToolContext) {

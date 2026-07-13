@@ -96,6 +96,10 @@ class LayersPanel : JPanel(BorderLayout()) {
             val doc = document ?: return@footerButton
             doc.moveLayerDown(doc.activeLayerIndex); refresh()
         })
+        add(footerButton(AllIcons.General.CollapseComponent, "Merge visible layers") {
+            val doc = document ?: return@footerButton
+            if (doc.mergeVisibleLayers()) refresh()
+        })
     }
 
     private fun footerButton(icon: Icon, tip: String, action: () -> Unit): JButton =
