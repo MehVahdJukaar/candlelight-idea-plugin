@@ -4,6 +4,7 @@ import java.awt.Color
 import java.awt.Rectangle
 import java.awt.image.BufferedImage
 import kotlin.math.abs
+import kotlin.math.floor
 
 /**
  * The editable image model: a [LayerStack], selection, undo/redo, and pixel operations. Tools talk
@@ -110,6 +111,17 @@ class ImageDocument(source: BufferedImage) {
     }
 
     fun deleteActiveLayer(): Boolean = deleteLayer(activeLayerIndex)
+
+    /** Merges all visible layers into one (Photoshop's "Merge Visible"); false if fewer than two. */
+    fun mergeVisibleLayers(): Boolean {
+        if (layers().count { it.visible } < 2) return false
+        pushUndo()
+        stack.mergeVisible()
+        invalidateCache()
+        onLayersChanged?.invoke()
+        onContentChanged?.invoke()
+        return true
+    }
 
     fun pushUndo() {
         undoStack.addLast(stack.snapshot())
@@ -271,6 +283,72 @@ class ImageDocument(source: BufferedImage) {
             }
         }
         if (changed) markContentChanged()
+    }
+
+    /** An independent copy of the active layer's pixels, e.g. as the base for a reversible preview. */
+    fun snapshotActiveLayer(): BufferedImage = stack.activeLayer.pixels.copyArgb()
+
+    /** Blits [base] straight back into the active layer, undoing an in-progress preview exactly. */
+    fun restoreActiveLayer(base: BufferedImage) {
+        val layer = stack.activeLayer.pixels
+        layer.setRGB(0, 0, width, height, base.getRGB(0, 0, width, height, null, 0, width), 0, width)
+        markContentChanged()
+    }
+
+    /**
+     * Rewrites the active layer by applying an HSB shift to every opaque pixel of [base] (its
+     * pre-adjust snapshot): hue rotated by [hueShift] turns (wrapping), saturation and brightness
+     * offset by [satDelta]/[briDelta] in -1..1 then clamped. Honors the active selection; alpha is
+     * preserved. Used for the whole-image Hue/Saturation/Brightness adjuster.
+     */
+    fun applyHsbAdjustment(base: BufferedImage, hueShift: Float, satDelta: Float, briDelta: Float) {
+        val sel = selection
+        val layer = stack.activeLayer.pixels
+        val hsb = FloatArray(3)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (sel != null && !sel.contains(x, y)) continue
+                val argb = base.getRGB(x, y)
+                val a = (argb ushr 24) and 0xFF
+                if (a == 0) {
+                    layer.setRGB(x, y, argb)
+                    continue
+                }
+                Color.RGBtoHSB((argb ushr 16) and 0xFF, (argb ushr 8) and 0xFF, argb and 0xFF, hsb)
+                var h = hsb[0] + hueShift
+                h -= floor(h)
+                val s = (hsb[1] + satDelta).coerceIn(0f, 1f)
+                val b = (hsb[2] + briDelta).coerceIn(0f, 1f)
+                val rgb = Color.HSBtoRGB(h, s, b) and 0xFFFFFF
+                layer.setRGB(x, y, (a shl 24) or rgb)
+            }
+        }
+        markContentChanged()
+    }
+
+    /**
+     * Tight bounds (image space) of the active layer's non-transparent pixels, or null when the layer
+     * is fully transparent. Used to arm the move/transform box around a layer's actual content rather
+     * than the whole canvas.
+     */
+    fun activeLayerOpaqueBounds(): Rectangle? {
+        val px = stack.activeLayer.pixels
+        var minX = Int.MAX_VALUE
+        var minY = Int.MAX_VALUE
+        var maxX = -1
+        var maxY = -1
+        for (y in 0 until px.height) {
+            for (x in 0 until px.width) {
+                if ((px.getRGB(x, y) ushr 24) != 0) {
+                    if (x < minX) minX = x
+                    if (x > maxX) maxX = x
+                    if (y < minY) minY = y
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+        if (maxX < 0) return null
+        return Rectangle(minX, minY, maxX - minX + 1, maxY - minY + 1)
     }
 
     fun copyRegion(region: Rectangle): BufferedImage = stack.copyRegion(region)

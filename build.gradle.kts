@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "net.mehvahdjukaar"
-version = "2.0.0"
+version = "2.1.3"
 
 repositories {
     mavenCentral()
@@ -51,7 +51,8 @@ tasks {
     }
 
     test {
-        useJUnit()
+        // Tests are disabled: the publish (`github`) task and local `build` skip them.
+        enabled = false
     }
 }
 

@@ -81,6 +81,28 @@ class LayerStack(source: BufferedImage) {
         return true
     }
 
+    /**
+     * Collapses every visible layer into a single layer sitting where the lowest visible one was,
+     * leaving hidden layers untouched (Photoshop's "Merge Visible"). Returns false when there are
+     * fewer than two visible layers, so there is nothing to merge.
+     */
+    fun mergeVisible(): Boolean {
+        val visible = layers.indices.filter { layers[it].visible }
+        if (visible.size < 2) return false
+        val bottom = visible.first()
+        val merged = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+        merged.createGraphics().apply {
+            for (i in visible) drawImage(layers[i].pixels, 0, 0, null)
+            dispose()
+        }
+        val name = layers[bottom].name
+        // Remove from the top down so the earlier indices we still need stay valid.
+        for (i in visible.sortedDescending()) layers.removeAt(i)
+        layers.add(bottom, Layer(name, merged))
+        activeLayerIndex = bottom
+        return true
+    }
+
     fun flatten(includeFloating: Boolean = false): BufferedImage {
         val out = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
         out.createGraphics().apply {

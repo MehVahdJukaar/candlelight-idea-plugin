@@ -34,7 +34,7 @@ class TransformTool : Tool {
     // Keeps the "move" id so the canvas's paste-placement integration (which keys off it) still works;
     // this single tool now moves, stretches and rotates — Move and Transform merged into one.
     override val id = "move"
-    override val displayName = "Move"
+    override val displayName = "Transform"
     override val description = "Move, stretch or rotate the selection or layer; modifier+corner rotates 90°"
     override val icon: Icon = ToolIcons.TRANSFORM
     override val cursor: Cursor = Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
@@ -50,6 +50,10 @@ class TransformTool : Tool {
     /** Number of clockwise 90° turns applied to [floating]; 0..3. */
     private var quadrant = 0
 
+    /** Whether the transformed pixels are mirrored, in the final on-screen (dest) orientation. */
+    private var flipH = false
+    private var flipV = false
+
     /** Original region, kept so Escape can drop the pixels back untouched. */
     private var origRegion = Rectangle()
 
@@ -60,6 +64,8 @@ class TransformTool : Tool {
     private var pressImage = Point()
     private var origDest = Rectangle()
     private var baseQuadrant = 0
+    private var baseFlipH = false
+    private var baseFlipV = false
     private var centerX = 0.0
     private var centerY = 0.0
 
@@ -78,8 +84,12 @@ class TransformTool : Tool {
     private fun arm(document: ImageDocument) {
         // A floating paste is dragged by the canvas's own placement logic, not transformed; leave it be.
         if (document.hasPendingPaste) return
-        val region = (document.selection ?: Rectangle(0, 0, document.width, document.height))
-            .intersection(Rectangle(0, 0, document.width, document.height))
+        val bounds = Rectangle(0, 0, document.width, document.height)
+        // With no selection, hug the active layer's opaque pixels (its visible content) rather than the
+        // whole canvas, so grabbing Move drops the box tight around what you'd actually drag. Fall back
+        // to the full canvas for a fully-transparent layer.
+        val region = (document.selection ?: document.activeLayerOpaqueBounds() ?: bounds)
+            .intersection(bounds)
         if (region.isEmpty) return
         origRegion = Rectangle(region)
         dest = Rectangle(region)
@@ -91,16 +101,13 @@ class TransformTool : Tool {
         if (dest.isEmpty) return
         val m = resolveMode(ctx)
         if (m == Mode.NONE) return // pressed away from the box: leave it armed, do nothing
-        if (floating == null) {
-            // First real manipulation: lift the pixels now (destructive, so snapshot for undo first).
-            ctx.document.pushUndo()
-            floating = ctx.document.liftRegion(origRegion)
-            ctx.document.selection = null
-        }
+        ensureLifted(ctx.document)
         mode = m
         pressImage = ctx.imagePoint
         origDest = Rectangle(dest)
         baseQuadrant = quadrant
+        baseFlipH = flipH
+        baseFlipV = flipV
         centerX = dest.x + dest.width / 2.0
         centerY = dest.y + dest.height / 2.0
     }
@@ -132,7 +139,10 @@ class TransformTool : Tool {
         val out = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
         out.createGraphics().apply {
             setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR)
-            drawImage(rotated, 0, 0, w, h, null)
+            // Negative dest span mirrors the draw, baking any horizontal/vertical flip into the pixels.
+            val x1 = if (flipH) w else 0; val x2 = if (flipH) 0 else w
+            val y1 = if (flipV) h else 0; val y2 = if (flipV) 0 else h
+            drawImage(rotated, x1, y1, x2, y2, 0, 0, rotated.width, rotated.height, null)
             dispose()
         }
         document.stamp(out, dest.x, dest.y)
@@ -158,12 +168,30 @@ class TransformTool : Tool {
         return true
     }
 
+    override fun onNudge(document: ImageDocument, dx: Int, dy: Int): Boolean {
+        // Arrow keys move the box like a tiny drag: arm it if needed, lift on the first nudge (so the
+        // move is undoable and the pixels detach), then shift the destination by whole image pixels.
+        if (dest.isEmpty) arm(document)
+        if (dest.isEmpty) return false
+        ensureLifted(document)
+        dest = Rectangle(dest.x + dx, dest.y + dy, dest.width, dest.height)
+        return true
+    }
+
     override fun onDeactivated(document: ImageDocument) {
         // Leaving the tool with lifted pixels bakes them; an armed-only box just disappears.
         if (floating != null) onCommit(document) else clearState()
     }
 
     // ---- gesture helpers ------------------------------------------------------------------------
+
+    /** Detaches the pixels into [floating] on the first real manipulation (destructive → undo first). */
+    private fun ensureLifted(document: ImageDocument) {
+        if (floating != null) return
+        document.pushUndo()
+        floating = document.liftRegion(origRegion)
+        document.selection = null
+    }
 
     private fun moveBy(ctx: ToolContext) {
         val dx = ctx.imagePoint.x - pressImage.x
@@ -204,6 +232,12 @@ class TransformTool : Tool {
             }
         }
 
+        // Dragging a handle past its anchor gives a negative scale: the box lands mirrored on the far
+        // side, so record the flip (relative to where this gesture started) and mirror the pixels to
+        // match — otherwise the box moves but the content isn't specular.
+        flipH = baseFlipH != (sx < 0)
+        flipV = baseFlipV != (sy < 0)
+
         val nl = ax + (base.x - ax) * sx
         val nr = ax + (base.x + base.width - ax) * sx
         val nt = ay + (base.y - ay) * sy
@@ -232,11 +266,9 @@ class TransformTool : Tool {
     override fun cursorAt(viewport: Viewport, componentPoint: Point, shiftDown: Boolean, ctrlDown: Boolean): Cursor? {
         if (dest.isEmpty) return null
         val c = viewport.toComponent(dest)
-        handleAt(c, componentPoint)?.let { (hx, hy) ->
-            // Ctrl over a corner rotates instead of resizing, so preview the rotate cursor.
-            if (hx != 0 && hy != 0 && ctrlDown) return ToolCursors.rotate()
-            return ToolCursors.resize(hx, hy)
-        }
+        // Ctrl anywhere on/near the box means rotate, so preview the rotate cursor.
+        if (ctrlDown && nearBox(c, componentPoint)) return ToolCursors.rotate()
+        handleAt(c, componentPoint)?.let { (hx, hy) -> return ToolCursors.resize(hx, hy) }
         if (c.contains(componentPoint)) return Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR)
         if (distanceToRect(c, componentPoint) <= JBUI.scale(ROTATE_RING)) return ToolCursors.rotate()
         return null
@@ -245,11 +277,11 @@ class TransformTool : Tool {
     /** Which gesture a press at [ctx] starts, given an already-staged box. */
     private fun resolveMode(ctx: ToolContext): Mode {
         val c = ctx.viewport.toComponent(dest)
+        // Holding Ctrl rotates (snapped to 90°) from anywhere on or near the box, so it's reachable
+        // even when the box fills the view and the outer ring is off-screen. Shift/Alt are reserved
+        // for constrain-proportions / scale-from-centre while resizing.
+        if (ctx.ctrlDown && nearBox(c, ctx.componentPoint)) return Mode.ROTATE
         handleAt(c, ctx.componentPoint)?.let { (hx, hy) ->
-            // Ctrl+corner rotates (snapped to 90°) for when the box fills the view and the outer ring
-            // is out of reach; Photoshop also rotates from the ring just outside the box (below).
-            // Shift/Alt are reserved for constrain-proportions / scale-from-centre while resizing.
-            if (hx != 0 && hy != 0 && ctx.ctrlDown) return Mode.ROTATE
             handleX = hx
             handleY = hy
             return Mode.RESIZE
@@ -258,6 +290,10 @@ class TransformTool : Tool {
         if (distanceToRect(c, ctx.componentPoint) <= JBUI.scale(ROTATE_RING)) return Mode.ROTATE
         return Mode.NONE
     }
+
+    /** True if [p] is inside the box or within the rotate ring just outside it. */
+    private fun nearBox(c: Rectangle, p: Point): Boolean =
+        c.contains(p) || distanceToRect(c, p) <= JBUI.scale(ROTATE_RING)
 
     /** Which handle of [c] (component space) sits under [p], as (x,y) in -1/0/1, or null. */
     private fun handleAt(c: Rectangle, p: Point): Pair<Int, Int>? {
@@ -298,6 +334,8 @@ class TransformTool : Tool {
         floating = null
         dest = Rectangle()
         quadrant = 0
+        flipH = false
+        flipV = false
         mode = Mode.NONE
         rotatedCache = null
         cachedQuadrant = -1
@@ -312,7 +350,11 @@ class TransformTool : Tool {
         // sits over the still-present image, so only the outline and handles are drawn.
         floating?.let {
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR)
-            g.drawImage(rotated(it), c.x, c.y, c.width, c.height, null)
+            val img = rotated(it)
+            // Mirror in dest space to preview a flip (swap the destination edges for each flipped axis).
+            val x1 = if (flipH) c.x + c.width else c.x; val x2 = if (flipH) c.x else c.x + c.width
+            val y1 = if (flipV) c.y + c.height else c.y; val y2 = if (flipV) c.y else c.y + c.height
+            g.drawImage(img, x1, y1, x2, y2, 0, 0, img.width, img.height, null)
         }
         CanvasRender.selectionOutline(g, c)
         drawHandles(g, c)

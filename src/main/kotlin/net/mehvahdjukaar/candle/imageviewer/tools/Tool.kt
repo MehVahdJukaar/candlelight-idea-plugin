@@ -100,6 +100,13 @@ interface Tool {
      */
     fun onCancel(document: ImageDocument): Boolean = false
 
+    /**
+     * Nudges a staged gesture by ([dx],[dy]) image pixels — the canvas routes arrow keys here so a
+     * tool with something staged (e.g. the transform box or the crop rectangle) can move it, Photoshop
+     * style. Returns true if it consumed the nudge; false lets the canvas fall back to panning the view.
+     */
+    fun onNudge(document: ImageDocument, dx: Int, dy: Int): Boolean = false
+
     /** Optional transient overlay drawn on top of the image (component-space graphics). */
     fun paintOverlay(g: Graphics2D, viewport: Viewport) {}
 

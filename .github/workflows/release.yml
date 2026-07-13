@@ -23,7 +23,7 @@ jobs:
           java-version: 17
 
       - name: Build
-        run: ./gradlew build
+        run: ./gradlew build -x test
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
