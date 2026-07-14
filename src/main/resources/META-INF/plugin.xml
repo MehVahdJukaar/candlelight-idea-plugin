@@ -26,7 +26,7 @@
 
         <editorTabTitleProvider implementation="net.mehvahdjukaar.candle.title.ModuleAwareTabTitleProvider"/>
 
-        <fileEditorProvider implementation="net.mehvahdjukaar.candle.imageviewer.ImageViewerProvider" order="first"/>
+        <fileEditorProvider implementation="net.mehvahdjukaar.candle.imageviewer.ide.ImageViewerProvider" order="first"/>
 
 
         <colorProvider implementation="net.mehvahdjukaar.candle.color.CandleColorProvider"/>

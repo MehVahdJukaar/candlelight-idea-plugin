@@ -6,10 +6,11 @@ plugins {
 }
 
 group = "net.mehvahdjukaar"
-version = "2.1.3"
+version = "2.2.0"
 
 repositories {
     mavenCentral()
+    mavenLocal() // for the shared editor core (candle-image-editor)
 
     intellijPlatform {
         defaultRepositories()
@@ -31,6 +32,10 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
         testFramework(TestFrameworkType.Plugin.Java)
     }
+
+    // The shared editor core (pure Java, zero deps), also bundled by the Nautilus Studio mod.
+    // Publish it from the candle-image-editor project: ./gradlew :core:publishToMavenLocal
+    implementation("net.mehvahdjukaar:candle-image-editor:0.1.0")
 
     testImplementation("junit:junit:4.13.2")
 }

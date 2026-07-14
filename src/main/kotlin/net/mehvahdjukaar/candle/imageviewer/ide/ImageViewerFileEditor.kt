@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.candle.imageviewer
+package net.mehvahdjukaar.candle.imageviewer.ide
 
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -11,6 +11,11 @@ import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
+import net.mehvahdjukaar.candle.imageviewer.Animation
+import net.mehvahdjukaar.candle.imageviewer.GifStrip
+import net.mehvahdjukaar.candle.imageviewer.ImageEditorPanel
+import net.mehvahdjukaar.candle.imageviewer.ImageViewerComponent
+import net.mehvahdjukaar.candle.imageviewer.McMeta
 import java.beans.PropertyChangeEvent
 import java.beans.PropertyChangeListener
 import java.io.ByteArrayInputStream
@@ -28,6 +33,7 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
 
     private val listeners = mutableListOf<PropertyChangeListener>()
     private var modified = false
+    private val editorFile = IdeEditorFile(file)
     private var editorPanel: ImageEditorPanel? = null
     private lateinit var focusComponent: JComponent
     private val component: JComponent = build()
@@ -51,7 +57,7 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
      */
     private fun promptSaveOnClose() {
         val panel = editorPanel ?: return
-        if (!panel.hasUnsavedChanges) return
+        if (!panel.hasUnsavedChanges()) return
         val choice = Messages.showYesNoDialog(
             project,
             "Save changes to ${file.name} before closing?",
@@ -71,7 +77,7 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
             // and play them; single-frame or undecodable GIFs fall back to the view-only component.
             val gif = runCatching { GifStrip.decode(bytes) }.getOrNull()
             if (gif != null) {
-                ImageEditorPanel(file, gif.strip, gif.frameCount, gif.frameDurationTicks, readOnly = true, onModifiedChanged = { setModified(it) })
+                ImageEditorPanel(editorFile, gif.strip, gif.frameCount, gif.frameDurationTicks, true) { setModified(it) }
                     .also { editorPanel = it; focusComponent = it.preferredFocus }
             } else {
                 viewOnly(bytes)
@@ -81,13 +87,13 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
             // metadata) pre-fills the frame count and speed when present.
             val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
             if (decoded != null) {
-                val meta = McMeta.readFor(file, decoded.width, decoded.height)
+                val meta = McMeta.readFor(editorFile, decoded.width, decoded.height)
                 ImageEditorPanel(
-                    file, decoded,
-                    initialFrames = meta?.frameCount ?: 1,
-                    initialDurationTicks = meta?.frameDurationTicks ?: Animation.DEFAULT_DURATION_TICKS,
-                    onModifiedChanged = { setModified(it) },
-                ).also { editorPanel = it; focusComponent = it.preferredFocus }
+                    editorFile, decoded,
+                    meta?.frameCount ?: 1,
+                    meta?.frameDurationTicks ?: Animation.DEFAULT_DURATION_TICKS,
+                    false,
+                ) { setModified(it) }.also { editorPanel = it; focusComponent = it.preferredFocus }
             } else {
                 viewOnly(bytes)
             }

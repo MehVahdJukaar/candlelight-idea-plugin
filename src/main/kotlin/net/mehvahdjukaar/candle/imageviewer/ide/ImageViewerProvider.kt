@@ -1,4 +1,4 @@
-package net.mehvahdjukaar.candle.imageviewer
+package net.mehvahdjukaar.candle.imageviewer.ide
 
 import com.intellij.openapi.fileEditor.FileEditor
 import com.intellij.openapi.fileEditor.FileEditorPolicy
@@ -18,8 +18,10 @@ class ImageViewerProvider : FileEditorProvider, DumbAware {
     override fun accept(project: Project, file: VirtualFile): Boolean =
         file.extension?.lowercase() in SUPPORTED_EXTENSIONS
 
-    override fun createEditor(project: Project, file: VirtualFile): FileEditor =
-        ImageViewerFileEditor(project, file)
+    override fun createEditor(project: Project, file: VirtualFile): FileEditor {
+        IdePlatform.install()
+        return ImageViewerFileEditor(project, file)
+    }
 
     override fun getEditorTypeId(): String = "candle-image-viewer"
 
