@@ -11,11 +11,11 @@ import com.intellij.openapi.util.UserDataHolderBase
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
-import net.mehvahdjukaar.candle.imageviewer.Animation
-import net.mehvahdjukaar.candle.imageviewer.GifStrip
-import net.mehvahdjukaar.candle.imageviewer.ImageEditorPanel
-import net.mehvahdjukaar.candle.imageviewer.ImageViewerComponent
-import net.mehvahdjukaar.candle.imageviewer.McMeta
+import net.mehvahdjukaar.candle.imageviewer.format.GifStrip
+import net.mehvahdjukaar.candle.imageviewer.format.McMeta
+import net.mehvahdjukaar.candle.imageviewer.model.Animation
+import net.mehvahdjukaar.candle.imageviewer.view.ImageEditorPanel
+import net.mehvahdjukaar.candle.imageviewer.widget.ImageViewerComponent
 import java.beans.PropertyChangeEvent
 import java.beans.PropertyChangeListener
 import java.io.ByteArrayInputStream
