@@ -36,5 +36,12 @@ Tested on Intellij 2025.3
 
 
 ### Platform Prefixes
-- Prefixes [F], [N], or [G] on editor tabs for classes from fabric, neoforge, or legacy forge sources.
-- Works for project sources and library dependencies (detected from jar/path names or loader package prefixes like `net.fabricmc`).
+- Prefixes [F] or [N] on classes which are from fabric or neoforge module.
+- Only works from classes from your project, doesn't work with dependencies yet.
+
+### Pixel Art Image Editor
+- A small image editor with photoshop like tooks and keybinds. Directly in your IDE
+- Supports GIFs and animated strips
+
+<img width="1402" height="1297" alt="image" src="https://github.com/user-attachments/assets/967ae499-6fc7-48a8-8062-36a043d23df6" />
+
