@@ -86,6 +86,16 @@
                                         implementation="net.mehvahdjukaar.candle.presentation.PlatformGotoTargetPresentationProvider"/>
 
         <projectViewNodeDecorator implementation="net.mehvahdjukaar.candle.presentation.PlatformProjectViewNodeDecorator"/>
+
+        <fileType name="Candle GLSL" language="CandleGLSL" fieldName="INSTANCE"
+                  implementationClass="net.mehvahdjukaar.candle.glsl.GlslFileType"
+                  extensions="glsl;vsh;fsh;csh;gsh;tsh;vert;frag;comp;geom;tesc;tese"/>
+        <lang.parserDefinition language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslParserDefinition"/>
+        <lang.syntaxHighlighterFactory language="CandleGLSL"
+                                       implementationClass="net.mehvahdjukaar.candle.glsl.GlslSyntaxHighlighterFactory"/>
+        <lang.commenter language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslCommenter"/>
+        <lang.braceMatcher language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslBraceMatcher"/>
+        <colorSettingsPage implementation="net.mehvahdjukaar.candle.glsl.GlslColorSettingsPage"/>
     </extensions>
 
     <actions>

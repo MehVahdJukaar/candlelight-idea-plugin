@@ -7,12 +7,6 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 
-/**
- * Registers [ImageViewerFileEditor] as the editor for common raster image formats.
- *
- * Uses [FileEditorPolicy.HIDE_OTHER_EDITORS] so this is the only tab shown, replacing both the text
- * editor and any other (built-in or third-party) image viewer.
- */
 class ImageViewerProvider : FileEditorProvider, DumbAware {
 
     override fun accept(project: Project, file: VirtualFile): Boolean =
@@ -28,7 +22,6 @@ class ImageViewerProvider : FileEditorProvider, DumbAware {
     override fun getPolicy(): FileEditorPolicy = FileEditorPolicy.HIDE_OTHER_EDITORS
 
     companion object {
-        // Formats the AWT Toolkit decodes natively (incl. animated GIFs).
         private val SUPPORTED_EXTENSIONS = setOf("png", "gif", "jpg", "jpeg", "bmp", "wbmp")
     }
 }

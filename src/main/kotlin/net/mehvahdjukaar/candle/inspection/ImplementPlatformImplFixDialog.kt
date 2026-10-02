@@ -93,7 +93,6 @@ class ImplementPlatformImplFixDialog(
                     .firstOrNull { it.name == className.substringAfterLast('.') }
                     ?: JavaDirectoryService.getInstance().createClass(direction, className.substringAfterLast('.'))
 
-                // Use the shared signature builder and updated addMethod
                 val expectedSignature = ExpectedImplSignature.fromExpectMethod(method)
                 ImplementPlatformImplFix.addMethod(project, expectedSignature, clazz)
             },

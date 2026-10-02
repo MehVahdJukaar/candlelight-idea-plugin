@@ -4,7 +4,9 @@ import com.intellij.codeInspection.LocalQuickFix
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.project.Project
-import com.intellij.psi.*
+import com.intellij.psi.JavaPsiFacade
+import com.intellij.psi.PsiCodeBlock
+import com.intellij.psi.PsiMethod
 import net.mehvahdjukaar.candle.util.CandleBundle
 
 class ReplaceWithAssertionErrorFix : LocalQuickFix {
@@ -26,14 +28,12 @@ class ReplaceWithAssertionErrorFix : LocalQuickFix {
             if (oldBody != null) {
                 oldBody.replace(newBody)
             } else {
-                // Method has no body; add one
                 method.addAfter(newBody, method.parameterList)
             }
         }
     }
 }
 
-// Additional quick fix for missing body (similar)
 class AddAssertionErrorBodyFix : LocalQuickFix {
     override fun getFamilyName(): String =
         CandleBundle["inspection.platformImpl.addBody"]

@@ -126,9 +126,7 @@ abstract class CandleLightFixtureTestCase : LightJavaCodeInsightFixtureTestCase(
             import net.minecraft.world.level.block.state.BlockBehaviour;
             import net.neoforged.neoforge.common.extensions.IBlockExtension;
 
-            // Models the NeoForge-remapped Block, which implements IBlockExtension. The single-module
-            // light fixture can't host per-platform Block variants, so the package-based platform
-            // attribution in the index is what keeps these methods NeoForge-specific.
+            //neoforge Block. fixture is single module so only the package marks it as neoforge
             public class Block extends BlockBehaviour implements IBlockExtension {
                 protected Block(Properties properties) {
                     super(properties);

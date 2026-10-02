@@ -27,7 +27,6 @@ import java.awt.event.KeyEvent
 import javax.swing.JComponent
 import javax.swing.KeyStroke
 
-/** Backs the editor's host services with IntelliJ dialogs, popups, the color picker and keymap. */
 object IdeHost : EditorHost {
 
     override fun error(parent: Component, message: String, title: String) {
@@ -94,8 +93,7 @@ object IdeHost : EditorHost {
         bindKeymap(component, IdeActions.ACTION_CUT, shortcuts.cut)
         bindKeymap(component, IdeActions.ACTION_PASTE, shortcuts.paste)
 
-        // Ctrl+S explicitly: the IDE's "Save All" has no default keymap shortcut (autosave makes it
-        // unnecessary), so relying on its shortcutSet would bind nothing. Merge in a user-assigned one.
+        // SaveAll has no default shortcut (autosave) so ctrl+s goes in by hand
         val ctrlS = CustomShortcutSet(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK))
         val saveShortcuts = ActionManager.getInstance().getAction("SaveAll")?.shortcutSet
         val merged = if (saveShortcuts != null) CompositeShortcutSet(ctrlS, saveShortcuts) else ctrlS

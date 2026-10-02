@@ -15,9 +15,6 @@ import org.jetbrains.kotlin.idea.base.util.module
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtFile
 
-/**
- * Gradle source-set role for Candlelight / multi-loader projects.
- */
 enum class ModuleRole(val platform: Platform?) {
     COMMON(null),
     FABRIC(Platform.FABRIC),
@@ -33,7 +30,6 @@ enum class ModuleRole(val platform: Platform?) {
             else -> null
         }
 
-    /** Includes [C] for common — used in navigation popups and project view. */
     val navigationPrefix: String?
         get() = when (this) {
             COMMON -> "[C]"
@@ -71,9 +67,6 @@ object ModuleRoleDetector {
         return ModuleRole.UNKNOWN
     }
 
-    /**
-     * Resolves platform/common role for editor tabs, including library and dependency sources.
-     */
     fun detectRoleForFile(file: VirtualFile, project: Project, contextModule: Module?): ModuleRole {
         val fileIndex = ProjectRootManager.getInstance(project).fileIndex
         val inProjectSources = fileIndex.isInSourceContent(file)
@@ -113,7 +106,6 @@ object ModuleRoleDetector {
         return isStructurallyCommon(element)
     }
 
-    /** Fallback when Gradle module naming does not expose the common source set. */
     private fun isStructurallyCommon(element: PsiElement): Boolean {
         val clazz = when (element) {
             is PsiMethod -> element.containingClass

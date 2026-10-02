@@ -2,41 +2,38 @@ package net.mehvahdjukaar.candle.util
 
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.openapi.project.DumbService
-import com.intellij.psi.*
+import com.intellij.psi.JavaPsiFacade
+import com.intellij.psi.PsiAnnotation
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiModifierListOwner
+import com.intellij.psi.PsiSubstitutor
+import com.intellij.psi.PsiType
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.CachedValueProvider
 import com.intellij.psi.util.CachedValuesManager
 import com.intellij.psi.util.MethodSignature
 import com.intellij.psi.util.TypeConversionUtil
-import net.mehvahdjukaar.candle.settings.CandleSettings
 import net.mehvahdjukaar.candle.inspection.ExpectedImplSignature
+import net.mehvahdjukaar.candle.settings.CandleSettings
 
 fun PsiModifierListOwner.hasAnnotation(type: AnnotationType): Boolean =
     type.any { hasAnnotation(it) }
 
-/**
- * True if this method is a common, untransformed `@PlatformImpl` method.
- */
 val PsiMethod.hasPlatformImplAnnotation: Boolean
     get() = hasAnnotation(AnnotationType.PLATFORM_IMPLEMENTATION)
 
 val PsiMethod.isVirtualOverrideAnnotation: Boolean
     get() = hasAnnotation(AnnotationType.VIRTUAL_OVERRIDE)
 
-/**
- * Finds the first annotation of the [type] on this method.
- */
 fun PsiMethod.findAnnotation(type: AnnotationType): PsiAnnotation? =
     annotations.firstOrNull {
         type.any { name -> it.hasQualifiedName(name) }
     }
 
-/**
- * The common declarations corresponding to this platform method.
- */
 val PsiMethod.commonMethods: Set<PsiMethod>
     get() {
-        // Don't resolve (or cache) while indexing — see note in VirtualOverrideUtils.
         if (DumbService.isDumb(project)) return emptySet()
         return if (CandleSettings.getInstance(project).psiCachingEnabled) {
             CachedValuesManager.getManager(project).getCachedValue(this) {
@@ -75,12 +72,8 @@ private fun PsiMethod.computeCommonMethods(): Set<PsiMethod> {
         ?: emptySet()
 }
 
-/**
- * The platform implementations of this common method.
- */
 val PsiMethod.platformMethodsByPlatform: Map<Platform, Set<PsiMethod>>
     get() {
-        // Don't resolve (or cache) while indexing — see note in VirtualOverrideUtils.
         if (DumbService.isDumb(project)) return emptyMap()
         return if (CandleSettings.getInstance(project).psiCachingEnabled) {
             CachedValuesManager.getManager(project).getCachedValue(this) {
@@ -111,15 +104,9 @@ private fun PsiMethod.computePlatformMethodsByPlatform(): Map<Platform, Set<PsiM
     }
 }
 
-/**
- * The platform implementations of this common method.
- */
 val PsiMethod.platformMethods: Set<PsiMethod>
     get() = platformMethodsByPlatform.flatMap { (_, methods) -> methods }.toSet()
 
-/**
- * The binary name of this class in dot-dollar format (eg. `a.b.C$D`)
- */
 val PsiClass.binaryName: String?
     get() =
         if (containingClass != null) {
@@ -128,26 +115,15 @@ val PsiClass.binaryName: String?
             qualifiedName
         }
 
-/**
- * Gets a sequence of this class and all its inner classes, recursed infinitely.
- */
 fun PsiClass.asSequenceWithInnerClasses(): Sequence<PsiClass> =
     sequence {
         yield(this@asSequenceWithInnerClasses)
         yieldAll(innerClasses.asSequence().flatMap { it.asSequenceWithInnerClasses() })
     }
 
-/**
- * Gets a value from this platform map, falling back to the [Platform.fallbackPlatforms] if not specified here.
- */
 fun <V : Any> Map<Platform, V>.getWithPlatformFallback(platform: Platform): V? =
     this[platform] ?: platform.fallbackPlatforms.asSequence().mapNotNull { getWithPlatformFallback(it) }.firstOrNull()
 
-/**
- * Gets the searching scope for searching for classes related to the [element].
- * If the element's corresponding module is not null (= an element in this project),
- * uses the project scope. Otherwise uses the all scope.
- */
 private fun scopeFor(element: PsiElement): GlobalSearchScope =
     if (ModuleUtil.findModuleForPsiElement(element) != null) {
         GlobalSearchScope.projectScope(element.project)
@@ -166,11 +142,6 @@ fun getDefaultReturnValue(returnType: PsiType?): String {
     }
 }
 
-/**
- * Generates a signature key based on the erased parameter types.
- * This ensures that a method using a generic <T> matches an override
- * using a specific type (e.g., String).
- */
 fun PsiMethod.signatureKey(substitutor: PsiSubstitutor = PsiSubstitutor.EMPTY): String {
     val params = parameterList.parameters.joinToString(",") { param ->
         TypeConversionUtil.erasure(substitutor.substitute(param.type)).canonicalText

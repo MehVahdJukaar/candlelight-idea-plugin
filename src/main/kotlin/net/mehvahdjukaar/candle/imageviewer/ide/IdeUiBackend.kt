@@ -7,7 +7,6 @@ import net.mehvahdjukaar.candle.imageviewer.platform.UiBackend
 import java.awt.Color
 import java.awt.Font
 
-/** Backs the editor's [UiBackend] with IntelliJ's JBUI/JBColor/UIUtil. */
 object IdeUiBackend : UiBackend {
     override fun scale(i: Int): Int = JBUI.scale(i)
     override fun miniFont(): Font = JBUI.Fonts.miniFont()

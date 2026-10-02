@@ -1,9 +1,14 @@
-// ExpectPlatformBodyInspection.kt
 package net.mehvahdjukaar.candle.inspection
 
 import com.intellij.codeInspection.LocalInspectionTool
 import com.intellij.codeInspection.ProblemsHolder
-import com.intellij.psi.*
+import com.intellij.psi.JavaElementVisitor
+import com.intellij.psi.PsiCodeBlock
+import com.intellij.psi.PsiElementVisitor
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiModifier
+import com.intellij.psi.PsiNewExpression
+import com.intellij.psi.PsiThrowStatement
 import net.mehvahdjukaar.candle.util.CandleBundle
 import net.mehvahdjukaar.candle.util.hasPlatformImplAnnotation
 
@@ -11,10 +16,8 @@ class PlatformImplBodyInspection : LocalInspectionTool() {
     override fun buildVisitor(holder: ProblemsHolder, isOnTheFly: Boolean): PsiElementVisitor =
         object : JavaElementVisitor() {
             override fun visitMethod(method: PsiMethod) {
-                // Only inspect @PlatformImpl methods in common source sets
                 if (!method.hasPlatformImplAnnotation) return
 
-                // Abstract or native methods don't have bodies to check
                 if (method.hasModifierProperty(PsiModifier.ABSTRACT) ||
                     method.hasModifierProperty(PsiModifier.NATIVE)) {
                     return
@@ -22,7 +25,6 @@ class PlatformImplBodyInspection : LocalInspectionTool() {
 
                 val body = method.body
                 if (body == null) {
-                    // Missing body entirely (shouldn't happen for non-abstract methods)
                     holder.registerProblem(
                         method.nameIdentifier ?: method,
                         CandleBundle["inspection.platformImpl.missingBody"],
@@ -31,7 +33,6 @@ class PlatformImplBodyInspection : LocalInspectionTool() {
                     return
                 }
 
-                // Check if body is exactly a throw new AssertionError();
                 if (!isValidExpectBody(body)) {
                     holder.registerProblem(
                         body,

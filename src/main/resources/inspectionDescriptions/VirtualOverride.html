@@ -5,14 +5,8 @@
 </p>
 
 <p>
-    This inspection verifies that annotated methods correctly correspond to a virtual override target.
-    If a method is marked with <code>@VirtualOverride</code> but does not match the expected signature or
-    cannot be resolved as a virtual override, an error is reported.
-</p>
-
-<p>
-    This helps prevent incorrect annotation usage and ensures that platform-specific override mechanisms
-    are applied only where valid.
+    A method marked with <code>@VirtualOverride</code> must match a method of that platform's supertype,
+    same name and parameters.
 </p>
 
 <p>
@@ -32,8 +26,5 @@ public void doSomething() {
 }
 </code></pre>
 <!-- tooltip end -->
-<p>
-    Ensure that annotated methods match the expected signature and exist in the virtual dispatch system.
-</p>
 </body>
 </html>
