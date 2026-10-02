@@ -5,7 +5,6 @@ import com.intellij.openapi.util.IconLoader
 import net.mehvahdjukaar.candle.imageviewer.platform.IconSet
 import javax.swing.Icon
 
-/** Maps the editor's named icons onto IntelliJ's `AllIcons`, and loads the bundled tool SVGs. */
 object IdeIconSet : IconSet {
     override fun undo(): Icon = AllIcons.Actions.Undo
     override fun redo(): Icon = AllIcons.Actions.Redo

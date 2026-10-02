@@ -8,6 +8,7 @@ import com.intellij.psi.PsiExpression
 import com.intellij.psi.PsiExpressionList
 import com.intellij.psi.PsiJavaToken
 import com.intellij.psi.PsiLiteralExpression
+import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiMethodCallExpression
 import com.intellij.psi.PsiNewExpression
 import com.intellij.psi.PsiParenthesizedExpression
@@ -18,17 +19,10 @@ import com.intellij.psi.PsiVariable
 import com.intellij.psi.util.PsiTreeUtil
 import java.awt.Color
 
-/**
- * Shows the gutter color swatch (and picker) next to color-shaped literals in Java:
- *  - String literals like "#RRGGBB", "#AARRGGBB", "#RGB" (with or without the leading '#')
- *  - int/long hex literals with exactly 6 (RGB) or 8 (ARGB) digits, always
- *  - any other int (decimal or shorter hex) only when the surrounding name looks color-y
- *    (field/variable/assignment target, call parameter, enclosing setter method)
- */
 class CandleColorProvider : ElementColorProvider {
 
     override fun getColorFrom(element: PsiElement): Color? {
-        // Only fire on the leaf value token, so we don't paint duplicate swatches on parent nodes.
+        // leaf token only or parent nodes get duplicate swatches
         if (element !is PsiJavaToken || element.firstChild != null) return null
         val literal = element.parent as? PsiLiteralExpression ?: return null
 
@@ -53,8 +47,6 @@ class CandleColorProvider : ElementColorProvider {
         literal.replace(factory.createExpressionFromText(newText, literal))
     }
 
-    // --- parsing ---------------------------------------------------------
-
     private fun parseStringColor(s: String): Color? {
         val hex = STRING_COLOR.matchEntire(s)?.groupValues?.get(1) ?: return null
         val full = if (hex.length == 3) hex.map { "$it$it" }.joinToString("") else hex
@@ -63,7 +55,7 @@ class CandleColorProvider : ElementColorProvider {
     }
 
     private fun colorFromInt(literal: PsiLiteralExpression, value: Long): Color? {
-        // Defer to the built-in JavaColorProvider for `new Color(...)` / `new JBColor(...)` args.
+        //JavaColorProvider already does these
         if (isInsideColorConstructor(literal)) return null
 
         val text = literal.text.trim().trimEnd('L', 'l').replace("_", "")
@@ -73,12 +65,9 @@ class CandleColorProvider : ElementColorProvider {
         val shapeMatch = hexDigits == 6 || hexDigits == 8
         if (!shapeMatch && !isColorContext(literal)) return null
 
-        // 8 hex digits, or a value with bits above 0xFFFFFF, carries alpha; otherwise opaque.
         val hasAlpha = hexDigits == 8 || (hexDigits != 6 && value > 0xFFFFFFL)
         return Color(value.toInt(), hasAlpha)
     }
-
-    // --- rebuilding (preserve the original literal's shape) ---------------
 
     private fun rebuildString(original: String, color: Color): String {
         val inner = original.trim('"')
@@ -102,7 +91,6 @@ class CandleColorProvider : ElementColorProvider {
             return prefix + packHex(color, alpha, upper) + suffix
         }
 
-        // Decimal: keep it decimal when the packed value is a non-negative int (or was a long).
         val alpha = color.alpha != 255
         val packed = if (alpha) color.rgb.toLong() and 0xFFFFFFFFL else (color.rgb.toLong() and 0xFFFFFFL)
         return if (suffix.isNotEmpty() || packed <= Int.MAX_VALUE) {
@@ -117,8 +105,6 @@ class CandleColorProvider : ElementColorProvider {
         val s = v.toString(16).padStart(if (alpha) 8 else 6, '0')
         return if (upper) s.uppercase() else s
     }
-
-    // --- name-based context detection ------------------------------------
 
     private fun isColorContext(literal: PsiLiteralExpression): Boolean {
         val expr = outermostExpression(literal)
@@ -135,20 +121,20 @@ class CandleColorProvider : ElementColorProvider {
         }
 
         (parent as? PsiExpressionList)?.let { args ->
-            val idx = args.expressions.indexOf(expr)
+            val i = args.expressions.indexOf(expr)
             when (val call = args.parent) {
                 is PsiMethodCallExpression -> {
                     call.methodExpression.referenceName?.let { if (looksColory(it)) return true }
-                    call.resolveMethod()?.parameterList?.parameters?.getOrNull(idx)?.name
+                    call.resolveMethod()?.parameterList?.parameters?.getOrNull(i)?.name
                         ?.let { if (looksColory(it)) return true }
                 }
                 is PsiNewExpression -> call.resolveConstructor()?.parameterList?.parameters
-                    ?.getOrNull(idx)?.name?.let { if (looksColory(it)) return true }
+                    ?.getOrNull(i)?.name?.let { if (looksColory(it)) return true }
             }
         }
 
         if (parent is PsiReturnStatement) {
-            PsiTreeUtil.getParentOfType(parent, com.intellij.psi.PsiMethod::class.java)
+            PsiTreeUtil.getParentOfType(parent, PsiMethod::class.java)
                 ?.name?.let { if (looksColory(it)) return true }
         }
 

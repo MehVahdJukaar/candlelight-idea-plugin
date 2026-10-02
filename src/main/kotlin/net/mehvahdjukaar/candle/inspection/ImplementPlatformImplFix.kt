@@ -10,7 +10,16 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.JavaProjectRootsUtil
 import com.intellij.openapi.roots.ModuleRootManager
 import com.intellij.pom.Navigatable
-import com.intellij.psi.*
+import com.intellij.psi.JavaDirectoryService
+import com.intellij.psi.JavaPsiFacade
+import com.intellij.psi.PsiClass
+import com.intellij.psi.PsiDirectory
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiMethod
+import com.intellij.psi.PsiModifier
+import com.intellij.psi.PsiPrimitiveType
+import com.intellij.psi.PsiType
 import com.intellij.psi.search.GlobalSearchScope
 import net.mehvahdjukaar.candle.util.AnnotationType
 import net.mehvahdjukaar.candle.util.CandleBundle
@@ -88,7 +97,6 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
                     }
                 } ?: continue
 
-            // Pass the original method so we can generate a clean parameter name for the instance parameter
             addMethod(project, expectedSignature, implClass, method)
         }
 
@@ -127,11 +135,6 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
     }
 
     companion object {
-        /**
-         * Creates a static implementation method in the given class using the expected signature.
-         * The first parameter (the instance owner) will use the simple class name if the original
-         * method is non‑static.
-         */
         fun addMethod(
             project: Project,
             expectedSignature: ExpectedImplSignature,
@@ -174,7 +177,7 @@ class ImplementPlatformImplFix(private val platforms: List<Platform>) : LocalQui
                         }
                         append(params.joinToString(", "))
                     } else {
-                        // Fallback if originalMethod is null (shouldn't happen with our new flow)
+                        //no original method, only the dialog path. params get argN names
                         val returnTypeText = expectedSignature.returnType.presentableText
                         append(returnTypeText).append(" ").append(expectedSignature.name).append("(")
                         val paramTexts = expectedSignature.parameterTypes.mapIndexed { index, psiType ->

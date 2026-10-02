@@ -4,22 +4,16 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.psi.CommonClassNames
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiClass
-import com.intellij.psi.PsiClassType
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiMethod
 import com.intellij.psi.PsiModifier
 import com.intellij.psi.PsiSubstitutor
-import com.intellij.psi.PsiType
 import com.intellij.psi.PsiTypes
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.GlobalSearchScope.moduleWithDependenciesAndLibrariesScope
 import com.intellij.psi.util.InheritanceUtil
 import com.intellij.psi.util.TypeConversionUtil
 import net.mehvahdjukaar.candle.util.Annotations.splitValueStrings
-
-// ---------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------
 
 class PlatformVirtualMethod(
     val method: PsiMethod,
@@ -51,10 +45,6 @@ class PlatformVirtualMethod(
     }
 }
 
-/**
- * Returns all platform methods that this common method virtually overrides.
- * Only returns methods that are **platform‑specific** (exist in some but not all platforms).
- */
 fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
     val containingClass = containingClass ?: return emptySet()
     val index = containingClass.getVirtualMethodIndex()
@@ -72,7 +62,6 @@ fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
     val platforms = matchingMethods.map { it.platform }.toSet()
     val availablePlatforms = Platform.listAvailable(project)
 
-    // Return methods only if they are platform‑specific
     return if (platforms.isNotEmpty() && platforms.size < availablePlatforms.size) {
         matchingMethods.map { it.method }.toSet()
     } else {
@@ -80,16 +69,10 @@ fun PsiMethod.findPlatformVirtualOverrides(): Set<PsiMethod> {
     }
 }
 
-/**
- * Returns all platform‑specific overridable methods for this class.
- * A method is included only if it exists in **exactly one** available platform.
- * Works only for classes inside the “common” module.
- */
 fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMethod> {
     val index = getVirtualMethodIndex()
     val availablePlatforms = Platform.listAvailable(project)
 
-    // Group platform methods by their "identity" (name + parameters count for now, as a heuristic)
     val grouped = mutableMapOf<String, MutableList<PlatformVirtualMethod>>()
     for (methodsForName in index.values) {
         for (platformMap in methodsForName.values) {
@@ -108,10 +91,6 @@ fun PsiClass.findAllPlatformVirtualOverridableMethods(): List<PlatformVirtualMet
         .toList()
 }
 
-/**
- * Checks if this method is a valid virtual override for the given platform.
- * Returns true if the method exists in the platform's supertype hierarchy.
- */
 fun PsiMethod.isValidVirtualOverrideForPlatform(plat: Platform): Boolean {
     val containingClass = containingClass ?: return false
     val index = containingClass.getVirtualMethodIndex()
@@ -121,17 +100,8 @@ fun PsiMethod.isValidVirtualOverrideForPlatform(plat: Platform): Boolean {
     return platformMethods.any { it.matches(this) }
 }
 
-// ---------------------------------------------------------------------
-// Index building (no caching)
-// ---------------------------------------------------------------------
-
-/**
- * Builds a map of method signature -> list of PlatformVirtualMethod for this class.
- */
 private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
-    // While the project is still indexing, class resolution is incomplete and the index would be
-    // full of false positives. Producing them makes gutter markers flash on at startup, which
-    // latches the gutter icon-area width too wide. Wait until indexing finished.
+    //resolution is incomplete while indexing. the false positives make gutter markers flash on startup and latch the gutter width too wide
     if (DumbService.isDumb(project)) return emptyMap()
     if (!ModuleRoleDetector.isCommonElement(this)) return emptyMap()
     return buildVirtualMethodIndex()
@@ -139,17 +109,15 @@ private fun PsiClass.getVirtualMethodIndex(): Map<String, Map<Platform, List<Pla
 
 private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<PlatformVirtualMethod>>> {
 
-    val dependencies = mutableSetOf<PsiElement>()   // no longer used for caching, but for collection
+    val dependencies = mutableSetOf<PsiElement>()
     val index = mutableMapOf<String, MutableMap<Platform, MutableList<PlatformVirtualMethod>>>()
     val project = project
     val availablePlatforms = Platform.listAvailable(project)
     if (availablePlatforms.size <= 1) return emptyMap();
 
-    // Supertypes of the original class (excluding java.lang.Object and the class itself)
     val commonSuperTypes = collectAllSuperTypes(this, dependencies)
         .filter { it.qualifiedName != CommonClassNames.JAVA_LANG_OBJECT && it != this }
 
-    // Interfaces added via annotations
     val implicitInterfaces = collectOptionalInterfaces(this)
 
     val allSuperTypesStrings = commonSuperTypes
@@ -158,37 +126,26 @@ private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<P
     allSuperTypesStrings += implicitInterfaces
     val facade = JavaPsiFacade.getInstance(project)
 
-    // Cache for already collected hierarchies inside this call (simple HashMap, no IDE caching)
-
     for (platform in availablePlatforms) {
         val platformHierarchyCache = HashMap<PsiClass, Set<PsiClass>>()
-        // Resolve in the platform module's scope so that, e.g., NeoForge's Block (which implements
-        // IBlockExtension) is the one we walk. When the module can't be resolved fall back to the
-        // whole project rather than bailing out, so detection still works in unusual layouts.
         val platformModule = platform.findModuleForPlatform(project)
         val scope = platformModule?.let { moduleWithDependenciesAndLibrariesScope(it, false) }
             ?: GlobalSearchScope.allScope(project)
         for (qualifiedName in allSuperTypesStrings) {
-            // Architectury projects can expose multiple classes with the same FQN in a platform's
-            // scope: the common/vanilla copy AND the loader-patched copy (e.g. NeoForge's
-            // `Block implements IBlockExtension`). `findClass` (singular) would pick only one and
-            // could miss the patched supertype, so walk them all.
+            // architectury can have both the vanilla and the patched copy of a class in scope. findClass would only get one
             for (platformSuperType in facade.findClasses(qualifiedName, scope)) {
                 val substitutor = TypeConversionUtil.getClassSubstitutor(platformSuperType, this, PsiSubstitutor.EMPTY)
                     ?: PsiSubstitutor.EMPTY
 
-                // Expand the hierarchy of that class in the platform module
                 val hierarchy = platformHierarchyCache.getOrPut(platformSuperType) {
                     collectAllSuperTypes(platformSuperType, dependencies)
                 }
 
                 for (platformClass in hierarchy) {
-                    // A class whose package belongs to another platform must not be attributed to
-                    // this one — matters only when we fell back to allScope above (a real platform
-                    // module scope already excludes other platforms' classes).
                     val classPlatform = platformClass.qualifiedName
                         ?.let { ModuleRoleDetector.detectPlatformFromPackage(it) }
-                    if (classPlatform != null && classPlatform != platform) continue
+                    val belongsToOtherPlatform = classPlatform != null && classPlatform != platform
+                    if (belongsToOtherPlatform) continue
 
                     for (method in platformClass.methods) {
                         if (!isOverridable(method)) continue
@@ -205,18 +162,10 @@ private fun PsiClass.buildVirtualMethodIndex(): Map<String, Map<Platform, List<P
     return index
 }
 
-// ---------------------------------------------------------------------
-// Overridable check
-// ---------------------------------------------------------------------
-
 private fun isOverridable(method: PsiMethod): Boolean {
     return !(method.isConstructor || method.hasModifierProperty(PsiModifier.STATIC) ||
         method.hasModifierProperty(PsiModifier.FINAL) || method.hasModifierProperty(PsiModifier.PRIVATE))
 }
-
-// ---------------------------------------------------------------------
-// Hierarchy Utilities
-// ---------------------------------------------------------------------
 
 private fun collectAllSuperTypes(psiClass: PsiClass, dependencies: MutableSet<PsiElement>): Set<PsiClass> {
     val result = mutableSetOf<PsiClass>()
@@ -241,12 +190,12 @@ private fun collectAllSuperTypes(psiClass: PsiClass, dependencies: MutableSet<Ps
 }
 
 private fun collectOptionalInterfaces(psiClass: PsiClass): List<String> {
-    val allImplicitAnnotations = mutableListOf<String>()
+    val interfaces = mutableListOf<String>()
     for (ann in AnnotationType.OPTIONAL_INTERFACE) {
         val optionalAnnotation = psiClass.getAnnotation(ann)
         if (optionalAnnotation != null) {
-            allImplicitAnnotations.addAll(optionalAnnotation.splitValueStrings("value"))
+            interfaces.addAll(optionalAnnotation.splitValueStrings("value"))
         }
     }
-    return allImplicitAnnotations
+    return interfaces
 }

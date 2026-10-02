@@ -1,4 +1,3 @@
-// VirtualPlatformOverrideImplicitUsageProvider.kt
 package net.mehvahdjukaar.candle.insight
 
 import com.intellij.codeInsight.daemon.ImplicitUsageProvider
@@ -10,10 +9,7 @@ import net.mehvahdjukaar.candle.util.findPlatformVirtualOverrides
 class VirtualPlatformOverrideImplicitUsageProvider : ImplicitUsageProvider {
     override fun isImplicitUsage(element: PsiElement): Boolean {
         when (element) {
-            is PsiMethod -> {
-                // Method is used if it virtually overrides any method in a platform supertype
-                return element.findPlatformVirtualOverrides().isNotEmpty()
-            }
+            is PsiMethod -> return element.findPlatformVirtualOverrides().isNotEmpty()
             is PsiParameter -> {
                 val parent = element.parent.parent
                 if (parent is PsiMethod) {

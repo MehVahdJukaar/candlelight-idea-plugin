@@ -38,22 +38,17 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
         val module = ModuleUtil.findModuleForPsiElement(psiFile) ?: return
         if (!module.isCommon) return
 
-        // 1. If we are inside a method body → skip
         val containingMethodBody = PsiTreeUtil.getParentOfType(position, PsiCodeBlock::class.java)
         if (containingMethodBody != null) {
-            // Also ensure it's not the method's parameter list or throws clause
             val method = PsiTreeUtil.getParentOfType(position, PsiMethod::class.java)
             if (method != null && PsiTreeUtil.isAncestor(method.body, position, true)) {
                 return
             }
         }
 
-        // 2. If the identifier is part of a dot (reference) expression → skip
         val reference = PsiTreeUtil.getParentOfType(position, PsiReferenceExpression::class.java)
-        if (reference != null && reference.qualifierExpression != null) {
-            // It's something like "obj.method" – we don't want overrides here
-            return
-        }
+        val isQualifiedCall = reference != null && reference.qualifierExpression != null
+        if (isQualifiedCall) return
 
 
         val containingClass = PsiTreeUtil.getParentOfType(position, PsiClass::class.java) ?: return
@@ -69,7 +64,6 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
 
         for (pvm in filteredMethods) {
             val lookupElement = createLookupElement(pvm, containingClass)
-            // Wrap with a low priority so the item appears at the bottom
             val lowPriorityElement = PrioritizedLookupElement.withPriority(lookupElement, -100000.0)
             result.addElement(lowPriorityElement)
         }
@@ -79,7 +73,7 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
         val method = pvm.method
         val returnType = method.returnType?.presentableText ?: "void"
         val params = method.parameterList.parameters.joinToString(", ") { it.type.presentableText }
-        val tailText = " → $returnType ($params)"
+        val tailText = " -> $returnType ($params)"
         val platformName = pvm.platform.id
 
         return LookupElementBuilder.create(method, method.name)
@@ -92,8 +86,7 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
                 val project = ctx.project
                 val document = editor.document
 
-                // The completion engine inserted the method name from startOffset to tailOffset.
-                // Remove it before inserting the full method stub.
+                //completion already typed the name in, drop it before the stub goes in
                 val startOffset = ctx.startOffset
                 val tailOffset = ctx.tailOffset
                 document.deleteString(startOffset, tailOffset)
@@ -101,11 +94,9 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
                 val methodText = buildMethodText(pvm)
                 document.insertString(startOffset, methodText)
 
-                // Move caret inside the method body (after the opening brace)
                 val bodyStart = startOffset + methodText.indexOf("{") + 1
                 editor.caretModel.moveToOffset(bodyStart)
 
-                // Commit and reformat
                 PsiDocumentManager.getInstance(project).commitDocument(document)
                 val psiFile = PsiDocumentManager.getInstance(project).getPsiFile(document)
                 if (psiFile != null) {
@@ -130,9 +121,8 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
         val exceptions = method.throwsList.referenceElements.joinToString(", ") { it.canonicalText }
         val throwsClause = if (exceptions.isNotEmpty()) " throws $exceptions" else ""
 
-        // Use simple annotation name instead of fully qualified
         val virtualOverrideAnnotation = AnnotationType.VIRTUAL_OVERRIDE.first().substringAfterLast('.')
-        val platformId = pvm.platform.id.lowercase() // e.g., "neoforge", "fabric"
+        val platformId = pvm.platform.id.lowercase()
 
         return buildString {
             append("@$virtualOverrideAnnotation(\"$platformId\")\n")
@@ -148,7 +138,6 @@ class VirtualOverrideCompletionProvider : CompletionProvider<CompletionParameter
     }
 
     private fun getSimpleTypeName(psiType: PsiType): String {
-        // Use presentable text which typically shows simple names
         return psiType.presentableText
     }
 }

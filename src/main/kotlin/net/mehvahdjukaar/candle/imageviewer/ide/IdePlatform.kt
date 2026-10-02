@@ -4,7 +4,6 @@ import net.mehvahdjukaar.candle.imageviewer.platform.Host
 import net.mehvahdjukaar.candle.imageviewer.platform.Icons
 import net.mehvahdjukaar.candle.imageviewer.platform.Ui
 
-/** Installs the IntelliJ-backed seam implementations. Idempotent; called before the editor opens. */
 object IdePlatform {
     @Volatile
     private var installed = false

@@ -9,12 +9,6 @@ import com.intellij.psi.PsiClass
 import com.intellij.psi.PsiElement
 import org.jetbrains.annotations.PropertyKey
 
-/**
- * @property id a unique string ID for this platform from [PlatformIds]
- * @property translationKey a resource bundle key for the display name of this platform
- * @property fallbackPlatforms fallback platforms used for finding `@PlatformImpl` implementation methods
- * @property identifyingPackage a package that is only present when a module is on this platform
- */
 enum class Platform(
     val id: String,
     @param:PropertyKey(resourceBundle = BUNDLE) private val translationKey: String,
@@ -52,12 +46,6 @@ enum class Platform(
             return Platform.entries.find { string == it.id }
         }
 
-        /**
-         * Gets the name of the [clazz]'s implementation version for this platform.
-         *
-         * Example: `com.example.Example` -> `com.example.forge.ExampleImpl`
-         */
-
 //TODO: cache and make faster
         fun getPlatformImplImplementationName(clazz: PsiClass): String {
             val className = clazz.binaryName ?: error("Could not get binary name of $this")
@@ -85,7 +73,7 @@ enum class Platform(
     fun findModuleForPlatform(project: Project): Module? {
         return ModuleManager.getInstance(project).modules.find { module ->
             val name: String = module.name.lowercase()
-            // Matches: "myproject.fabric.main", etc. ".neoforge.main" does not match ".forge.main".
+            // the dot is so ".neoforge.main" doesnt match forge
             name.contains(".${this.id}.main")
         }
     }

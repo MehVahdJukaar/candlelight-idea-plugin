@@ -24,10 +24,6 @@ import javax.swing.ImageIcon
 import javax.swing.JComponent
 import javax.swing.SwingConstants
 
-/**
- * Shows an image. Static formats (png/jpg/bmp) open in the editable [ImageEditorPanel]; animated GIFs
- * and anything ImageIO can't decode fall back to the view-only [ImageViewerComponent].
- */
 class ImageViewerFileEditor(private val project: Project, private val file: VirtualFile) :
     UserDataHolderBase(), FileEditor {
 
@@ -39,8 +35,7 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
     private val component: JComponent = build()
 
     init {
-        // The platform doesn't prompt to save custom (non-document) editors when their tab closes,
-        // so an edited image would be silently discarded. Catch the close and offer to save first.
+        //ide doesnt ask to save custom editors on close, edits would just be lost
         project.messageBus.connect(this).subscribe(
             FileEditorManagerListener.Before.FILE_EDITOR_MANAGER,
             object : FileEditorManagerListener.Before {
@@ -51,10 +46,7 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
         )
     }
 
-    /**
-     * Asks the user whether to persist unsaved edits before the tab closes. The platform gives custom
-     * editors no way to veto the close, so this is a two-way Save / Don't Save choice (no Cancel).
-     */
+    //no cancel button, the close cant be vetoed from here
     private fun promptSaveOnClose() {
         val panel = editorPanel ?: return
         if (!panel.hasUnsavedChanges()) return
@@ -73,8 +65,6 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
         val bytes = file.contentsToByteArray()
         val ext = file.extension?.lowercase()
         if (ext == "gif") {
-            // Multi-frame GIFs open as a (read-only) sprite strip so the Animation controls can scrub
-            // and play them; single-frame or undecodable GIFs fall back to the view-only component.
             val gif = runCatching { GifStrip.decode(bytes) }.getOrNull()
             if (gif != null) {
                 ImageEditorPanel(editorFile, gif.strip, gif.frameCount, gif.frameDurationTicks, true) { setModified(it) }
@@ -83,8 +73,6 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
                 viewOnly(bytes)
             }
         } else {
-            // Static formats decode to one editable image. A sibling .mcmeta (Minecraft animation
-            // metadata) pre-fills the frame count and speed when present.
             val decoded = runCatching { ImageIO.read(ByteArrayInputStream(bytes)) }.getOrNull()
             if (decoded != null) {
                 val meta = McMeta.readFor(editorFile, decoded.width, decoded.height)
@@ -102,7 +90,6 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
         errorLabel("Failed to load ${file.name}: ${t.message}").also { focusComponent = it }
     }
 
-    /** View-only fallback for images ImageIO can't open editably (e.g. odd GIFs). */
     private fun viewOnly(bytes: ByteArray): JComponent {
         val icon = ImageIcon(bytes)
         return if (icon.iconWidth <= 0) {
@@ -119,8 +106,7 @@ class ImageViewerFileEditor(private val project: Project, private val file: Virt
         if (value == modified) return
         val old = modified
         modified = value
-        // FileEditor.PROP_MODIFIED is not a Kotlin-visible constant here; its value is "modified".
-        val event = PropertyChangeEvent(this, "modified", old, value)
+        val event = PropertyChangeEvent(this, "modified", old, value) // PROP_MODIFIED isn't visible from kotlin
         listeners.toList().forEach { it.propertyChange(event) }
     }
 
