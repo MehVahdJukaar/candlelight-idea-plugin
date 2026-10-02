@@ -30,6 +30,10 @@
 
 
         <colorProvider implementation="net.mehvahdjukaar.candle.color.CandleColorProvider"/>
+        <highlightVisitor implementation="net.mehvahdjukaar.candle.highlight.MethodVisibilityHighlightVisitor"/>
+        <colorSettingsPage implementation="net.mehvahdjukaar.candle.highlight.CandleColorSettingsPage"/>
+        <additionalTextAttributes scheme="Default" file="colorSchemes/CandleDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/CandleDarcula.xml"/>
 
         <codeInsight.lineMarkerProvider language="JAVA"
                                         implementationClass="net.mehvahdjukaar.candle.gutter.CommonMethodLineMarkerProvider"/>

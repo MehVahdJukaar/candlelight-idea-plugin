@@ -7,11 +7,6 @@ out/
 /.kotlin/
 /.gradle-local/
 
-# AI agent / assistant config (local only, not on GitHub)
-.claude/
-.cursor/
-.junie/
-CLAUDE.md
 /.intellijPlatform/layoutIndex/IU-261.25134.95-4205fffe7546.json
 /.intellijPlatform/localPlatformArtifacts/IU-261.25134.95/bundledModule-fleet.andel-IU-261.25134.95.xml
 /.intellijPlatform/localPlatformArtifacts/IU-261.25134.95/bundledModule-fleet.bifurcan-IU-261.25134.95.xml

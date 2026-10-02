@@ -1,4 +1,7 @@
+import org.gradle.internal.execution.caching.CachingState.enabled
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.extensions.intellijPlatform
+import sun.tools.jar.resources.jar
 
 plugins {
     id("org.jetbrains.intellij.platform") version "2.17.0"
@@ -6,7 +9,7 @@ plugins {
 }
 
 group = "net.mehvahdjukaar"
-version = "2.2.0"
+version = "2.2.4"
 
 repositories {
     mavenCentral()
@@ -35,7 +38,7 @@ dependencies {
 
     // The shared editor core (pure Java, zero deps), also bundled by the Nautilus Studio mod.
     // Publish it from the candle-image-editor project: ./gradlew :core:publishToMavenLocal
-    implementation("net.mehvahdjukaar:candle-image-editor:1.0.0")
+    implementation("net.mehvahdjukaar:candle-image-editor:1.0.1")
 
     testImplementation("junit:junit:4.13.2")
 }
@@ -53,6 +56,16 @@ intellijPlatform {
 tasks {
     jar {
         from("COPYING", "COPYING.LESSER")
+
+        // Embed the pure-Java editor core (candle-image-editor) directly into the plugin jar so the
+        // jar is self-contained. We install by dropping this single jar into the IDE plugins folder,
+        // which has no lib/ sibling to resolve the dependency from - without this, IdeUiBackend can't
+        // find its superclass platform.UiBackend and the image FileEditor fails to load at runtime.
+        from(
+            configurations.runtimeClasspath.get()
+            .filter { it.name.startsWith("candle-image-editor") }
+            .map { zipTree(it) })
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
 
     test {
