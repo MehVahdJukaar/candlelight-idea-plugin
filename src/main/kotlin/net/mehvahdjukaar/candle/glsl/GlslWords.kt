@@ -3,11 +3,14 @@ package net.mehvahdjukaar.candle.glsl
 object GlslWords {
 
     val KEYWORDS = setOf(
+        "break", "continue", "do", "for", "while", "switch", "case", "default", "if", "else",
+        "true", "false", "discard", "return", "struct", "defined"
+    )
+
+    val QUALIFIERS = setOf(
         "attribute", "const", "uniform", "varying", "buffer", "shared", "coherent", "volatile", "restrict",
         "readonly", "writeonly", "layout", "centroid", "flat", "smooth", "noperspective", "patch", "sample",
-        "break", "continue", "do", "for", "while", "switch", "case", "default", "if", "else", "subroutine",
-        "in", "out", "inout", "true", "false", "invariant", "precise", "discard", "return", "struct",
-        "precision", "highp", "mediump", "lowp", "defined"
+        "subroutine", "in", "out", "inout", "invariant", "precise", "precision", "highp", "mediump", "lowp"
     )
 
     val TYPES: Set<String> = buildSet {

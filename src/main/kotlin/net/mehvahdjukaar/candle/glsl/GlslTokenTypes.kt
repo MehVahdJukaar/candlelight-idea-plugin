@@ -11,6 +11,7 @@ object GlslTokenTypes {
     val DIRECTIVE = GlslTokenType("DIRECTIVE")
     val INCLUDE_PATH = GlslTokenType("INCLUDE_PATH")
     val KEYWORD = GlslTokenType("KEYWORD")
+    val QUALIFIER = GlslTokenType("QUALIFIER")
     val TYPE = GlslTokenType("TYPE")
     val BUILTIN_VARIABLE = GlslTokenType("BUILTIN_VARIABLE")
     val BUILTIN_FUNCTION = GlslTokenType("BUILTIN_FUNCTION")

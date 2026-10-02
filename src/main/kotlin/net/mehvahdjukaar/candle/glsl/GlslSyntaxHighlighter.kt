@@ -27,6 +27,7 @@ class GlslSyntaxHighlighter : SyntaxHighlighterBase() {
         val DIRECTIVE = createTextAttributesKey("CANDLE_GLSL_DIRECTIVE", D.METADATA)
         val INCLUDE_PATH = createTextAttributesKey("CANDLE_GLSL_INCLUDE_PATH", D.STRING)
         val KEYWORD = createTextAttributesKey("CANDLE_GLSL_KEYWORD", D.KEYWORD)
+        val QUALIFIER = createTextAttributesKey("CANDLE_GLSL_QUALIFIER", D.KEYWORD)
         val TYPE = createTextAttributesKey("CANDLE_GLSL_TYPE", D.KEYWORD)
         val BUILTIN_VARIABLE = createTextAttributesKey("CANDLE_GLSL_BUILTIN_VARIABLE", D.PREDEFINED_SYMBOL)
         val BUILTIN_FUNCTION = createTextAttributesKey("CANDLE_GLSL_BUILTIN_FUNCTION", D.STATIC_METHOD)
@@ -41,12 +42,27 @@ class GlslSyntaxHighlighter : SyntaxHighlighterBase() {
         val COMMA = createTextAttributesKey("CANDLE_GLSL_COMMA", D.COMMA)
         val DOT = createTextAttributesKey("CANDLE_GLSL_DOT", D.DOT)
 
+        //these come from GlslSymbolAnnotator, not the lexer
+        val UNIFORM = createTextAttributesKey("CANDLE_GLSL_UNIFORM", D.STATIC_FIELD)
+        val INPUT = createTextAttributesKey("CANDLE_GLSL_INPUT", D.INSTANCE_FIELD)
+        val OUTPUT = createTextAttributesKey("CANDLE_GLSL_OUTPUT", D.INSTANCE_FIELD)
+        val CONSTANT = createTextAttributesKey("CANDLE_GLSL_CONSTANT", D.CONSTANT)
+        val GLOBAL_VARIABLE = createTextAttributesKey("CANDLE_GLSL_GLOBAL_VARIABLE", D.GLOBAL_VARIABLE)
+        val LOCAL_VARIABLE = createTextAttributesKey("CANDLE_GLSL_LOCAL_VARIABLE", D.LOCAL_VARIABLE)
+        val PARAMETER = createTextAttributesKey("CANDLE_GLSL_PARAMETER", D.PARAMETER)
+        val MEMBER = createTextAttributesKey("CANDLE_GLSL_MEMBER", D.INSTANCE_FIELD)
+        val STRUCT_NAME = createTextAttributesKey("CANDLE_GLSL_STRUCT_NAME", TYPE)
+        val FUNCTION_DECLARATION = createTextAttributesKey("CANDLE_GLSL_FUNCTION_DECLARATION", D.FUNCTION_DECLARATION)
+        val MACRO = createTextAttributesKey("CANDLE_GLSL_MACRO", D.CONSTANT)
+        val LAYOUT_PARAM = createTextAttributesKey("CANDLE_GLSL_LAYOUT_PARAM", QUALIFIER)
+
         private val KEYS_BY_TOKEN: Map<IElementType, TextAttributesKey> = mapOf(
             T.LINE_COMMENT to LINE_COMMENT,
             T.BLOCK_COMMENT to BLOCK_COMMENT,
             T.DIRECTIVE to DIRECTIVE,
             T.INCLUDE_PATH to INCLUDE_PATH,
             T.KEYWORD to KEYWORD,
+            T.QUALIFIER to QUALIFIER,
             T.TYPE to TYPE,
             T.BUILTIN_VARIABLE to BUILTIN_VARIABLE,
             T.BUILTIN_FUNCTION to BUILTIN_FUNCTION,

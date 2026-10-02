@@ -14,4 +14,80 @@
             <option name="FOREGROUND" value="8cc59a"/>
         </value>
     </option>
+    <option name="CANDLE_GLSL_KEYWORD">
+        <value>
+            <option name="FOREGROUND" value="cc7832"/>
+            <option name="FONT_TYPE" value="1"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_BUILTIN_VARIABLE">
+        <value>
+            <option name="FOREGROUND" value="ef7a85"/>
+            <option name="FONT_TYPE" value="2"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_BUILTIN_FUNCTION">
+        <value>
+            <option name="FOREGROUND" value="56a8f5"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_FUNCTION_CALL">
+        <value>
+            <option name="FOREGROUND" value="ffc66d"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_INCLUDE_PATH">
+        <value>
+            <option name="FOREGROUND" value="6a8759"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_OUTPUT">
+        <value>
+            <option name="FOREGROUND" value="ffcb6b"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_CONSTANT">
+        <value>
+            <option name="FOREGROUND" value="9876aa"/>
+            <option name="FONT_TYPE" value="2"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_GLOBAL_VARIABLE">
+        <value>
+            <option name="FOREGROUND" value="9876aa"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_PARAMETER">
+        <value>
+            <option name="FOREGROUND" value="d0b8e8"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_FUNCTION_DECLARATION">
+        <value>
+            <option name="FOREGROUND" value="ffc66d"/>
+            <option name="FONT_TYPE" value="1"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_MACRO">
+        <value>
+            <option name="FOREGROUND" value="bbb529"/>
+            <option name="FONT_TYPE" value="2"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_LAYOUT_PARAM">
+        <value>
+            <option name="FOREGROUND" value="a39fc7"/>
+            <option name="FONT_TYPE" value="2"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_QUALIFIER">
+        <value>
+            <option name="FOREGROUND" value="e87763"/>
+        </value>
+    </option>
+    <option name="CANDLE_GLSL_STRUCT_NAME">
+        <value>
+            <option name="FOREGROUND" value="e8ae42"/>
+        </value>
+    </option>
 </list>
