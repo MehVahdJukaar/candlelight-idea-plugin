@@ -140,6 +140,7 @@ class GlslLexer : LexerBase() {
     private fun identifierType(word: String): IElementType {
         if (word in GlslWords.TYPES) return T.TYPE
         if (word in GlslWords.KEYWORDS) return T.KEYWORD
+        if (word in GlslWords.QUALIFIERS) return T.QUALIFIER
         if (word.startsWith("gl_")) return T.BUILTIN_VARIABLE
 
         var i = tokenEnd

@@ -93,6 +93,7 @@
         <lang.parserDefinition language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslParserDefinition"/>
         <lang.syntaxHighlighterFactory language="CandleGLSL"
                                        implementationClass="net.mehvahdjukaar.candle.glsl.GlslSyntaxHighlighterFactory"/>
+        <annotator language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslSymbolAnnotator"/>
         <lang.commenter language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslCommenter"/>
         <lang.braceMatcher language="CandleGLSL" implementationClass="net.mehvahdjukaar.candle.glsl.GlslBraceMatcher"/>
         <colorSettingsPage implementation="net.mehvahdjukaar.candle.glsl.GlslColorSettingsPage"/>
