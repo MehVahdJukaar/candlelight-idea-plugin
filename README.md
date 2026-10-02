@@ -38,3 +38,6 @@ Tested on Intellij 2025.3
 ### Platform Prefixes
 - Prefixes [F], [N], or [G] on editor tabs for classes from fabric, neoforge, or legacy forge sources.
 - Works for project sources and library dependencies (detected from jar/path names or loader package prefixes like `net.fabricmc`).
+
+### GLSL Syntax Highlighting
+- GLSL syntax highlighting for shader files, supporting mojang import syntax
