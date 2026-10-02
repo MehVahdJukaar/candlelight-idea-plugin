@@ -1,0 +1,17 @@
+<list>
+    <option name="CANDLE_PRIVATE_METHOD">
+        <value>
+            <option name="FOREGROUND" value="d88fb5"/>
+        </value>
+    </option>
+    <option name="CANDLE_PROTECTED_METHOD">
+        <value>
+            <option name="FOREGROUND" value="c9a85c"/>
+        </value>
+    </option>
+    <option name="CANDLE_PACKAGE_PRIVATE_METHOD">
+        <value>
+            <option name="FOREGROUND" value="8cc59a"/>
+        </value>
+    </option>
+</list>
